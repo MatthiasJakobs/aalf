@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from tsx.datasets.monash import load_m4_daily_bench, load_monash
 from tsx.datasets import windowing
@@ -48,14 +49,29 @@ def main():
     H = 1
     j = 0
 
-    #X = load_m4_daily_bench()[100]
+
+    ### Australian electricity demands
     X = load_monash('australian_electricity_demand')['series_value']
+    log = []
     for i, x in enumerate(X):
         print('-'*30, i, '-'*30)
-        run_experiment(x, L, H, j)
+        log = run_experiment(log, x, L, H, j)
+
+    log = pd.DataFrame(log)
+    log.to_csv('results/australian_electricity_demand.csv')
+
+    ### M4 Subset
+    X = load_m4_daily_bench()
+    log = []
+    for i, x in enumerate(X[:50]):
+        print('-'*30, i, '-'*30)
+        log = run_experiment(log, x, L, H, j)
+
+    log = pd.DataFrame(log)
+    log.to_csv('results/m4.csv')
 
 
-def run_experiment(X, L, H, j, verbose=False):
+def run_experiment(log, X, L, H, j, verbose=False):
     print('ts length', X.shape)
 
     # Split and normalize data
@@ -92,14 +108,6 @@ def run_experiment(X, L, H, j, verbose=False):
     print('val shape', x_val.shape, y_val.shape)
     print('test shape', x_test.shape, y_test.shape)
 
-    simple_hp = {
-        'random_state': 192937,
-        'max_epochs': 2000,
-        'device': None,
-        'lr': 1e-2,
-        'batch_size': 2048,
-        'callbacks': [skorch.callbacks.EarlyStopping(load_best=True)],
-    }
     f_i = LinearRegression()
     f_i.fit(x_train.squeeze(), y_train)
     # f_i = NeuralNetRegressor(get_simple(L, H), verbose=verbose, **simple_hp)
@@ -110,7 +118,7 @@ def run_experiment(X, L, H, j, verbose=False):
     val_ds = Dataset(x_val, y_val)
     complex_hp = {
         'random_state': 192937,
-        'max_epochs': 10000,
+        'max_epochs': 5000,
         #'max_epochs': 2000,
         'device': None,
         'lr': 1e-3,
@@ -145,6 +153,10 @@ def run_experiment(X, L, H, j, verbose=False):
     print('mean value', loss_mean)
     print('linear', loss_i)
     print('neural net', loss_c)
+
+    log.append({'lv_test': loss_lv, 'mean_test': loss_mean, 'linear_test': loss_i, 'complex_test': loss_c})
+
+    return log
 
 
 if __name__ == '__main__':
