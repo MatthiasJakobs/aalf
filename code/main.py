@@ -17,6 +17,13 @@ from skorch.dataset import Dataset
 from skorch.helper import predefined_split
 from sklearn.neural_network import MLPRegressor
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import RandomizedSearchCV
+from seedpy import fixedseed
+
+from cdd_plots import create_cdd
+
+def rmse(a, b):
+    return mean_squared_error(a, b, squared=False)
 
 def get_simple(L, H):
     with fixedseed(torch, 921172):
@@ -48,57 +55,65 @@ def get_complex(L, H, n_filters=32):
     return model
 
 def main():
-    ### Australian electricity demands
     L = 10
-    j = 0
 
+    ### Australian electricity demands
     X, horizons = load_monash('australian_electricity_demand', return_horizon=True)
     X = X['series_value']
     H = horizons[0]
-    log = []
+    log_val = []
+    log_test = []
     for i, x in enumerate(X):
         print('-'*30, i, '-'*30)
-        log = run_experiment(log, x, L, H, j, verbose=True)
+        log_val, log_test = run_experiment(log_val, log_test, x, L, H, verbose=True)
 
-    log = pd.DataFrame(log)
-    log.index.rename('dataset_names', inplace=True)
-    print(log)
-    log.to_csv('results/australian_electricity_demand.csv')
+    log_val = pd.DataFrame(log_val)
+    log_val.index.rename('dataset_names', inplace=True)
+    log_val.to_csv('results/australian_electricity_demand_val.csv')
+    log_test = pd.DataFrame(log_test)
+    log_test.index.rename('dataset_names', inplace=True)
+    log_test.to_csv('results/australian_electricity_demand_test.csv')
 
-
-    ### M4 Subset
-    L = 10
-    H = 1
-    j = 0
-
-    X, horizons = load_m4_daily_bench(return_horizon=True)
-    log = []
-    for i, x in enumerate(X):
-        print('-'*30, i, '-'*30)
-        log = run_experiment(log, x, L, horizons[i], j)
-
-    log = pd.DataFrame(log)
-    log.index.rename('dataset_names', inplace=True)
-    log.to_csv('results/m4.csv')
+    create_cdd('australian_electricity_demand')
 
     ### KDD Cup
-    L = 10
-    H = 1
-    j = 0
-
     X, horizons = load_monash('kdd_cup_nomissing', return_horizon=True)
     X = X['series_value']
-    log = []
+    log_val = []
+    log_test = []
     for i, x in enumerate(X):
         print('-'*30, i, '-'*30)
-        log = run_experiment(log, x, L, horizons[i], j, lr=2e-4, verbose=True)
+        log_val, log_test = run_experiment(log_val, log_test, x, L, horizons[i], verbose=True)
 
-    log = pd.DataFrame(log)
-    log.index.rename('dataset_names', inplace=True)
-    log.to_csv('results/kdd.csv')
+    log_val = pd.DataFrame(log_val)
+    log_val.index.rename('dataset_names', inplace=True)
+    log_val.to_csv('results/kdd_val.csv')
+    log_test = pd.DataFrame(log_test)
+    log_test.index.rename('dataset_names', inplace=True)
+    log_test.to_csv('results/kdd_test.csv')
 
-def run_experiment(log, X, L, H, j, lr=1e-3, verbose=False):
-    print('ts length', X.shape)
+    create_cdd('kdd')
+
+    ### weather
+    X, horizons = load_monash('weather', return_horizon=True)
+    X = X['series_value']
+    log_val = []
+    log_test = []
+    for i, x in enumerate(X):
+        print('-'*30, i, '-'*30)
+        log_val, log_test = run_experiment(log_val, log_test, x, L, horizons[i], verbose=True)
+
+    log_val = pd.DataFrame(log_val)
+    log_val.index.rename('dataset_names', inplace=True)
+    log_val.to_csv('results/weather_val.csv')
+    log_test = pd.DataFrame(log_test)
+    log_test.index.rename('dataset_names', inplace=True)
+    log_test.to_csv('results/weather_test.csv')
+
+    create_cdd('weather')
+
+def run_experiment(log_val, log_test, X, L, H, lr=1e-3, verbose=False):
+    print(H, 'ts length', X.shape)
 
     # Split and normalize data
     end_train = int(len(X) * 0.5)
@@ -123,71 +138,51 @@ def run_experiment(log, X, L, H, j, lr=1e-3, verbose=False):
     y_train = y_train[..., -1:]
     y_val = y_val[..., -1:]
     y_test = y_test[..., -1:]
-    print(x_train.shape, y_train.shape)
-    print(x_val.shape, y_val.shape)
-    print(x_test.shape, y_test.shape)
 
-    x_train = np.expand_dims(x_train.astype(np.float32), 1)
-    x_val = np.expand_dims(x_val.astype(np.float32), 1)
-    x_test = np.expand_dims(x_test.astype(np.float32), 1)
-    y_train = y_train.reshape(-1, 1).astype(np.float32)
-    y_val = y_val.reshape(-1, 1).astype(np.float32)
-    y_test = y_test.reshape(-1, 1).astype(np.float32)
+    x_train = x_train.astype(np.float32)
+    x_val = x_val.astype(np.float32)
+    x_test = x_test.astype(np.float32)
+    y_train = y_train.astype(np.float32)
+    y_val = y_val.astype(np.float32)
+    y_test = y_test.astype(np.float32)
 
     # Train base models
-    val_ds = Dataset(x_val, y_val)
-
     f_i = LinearRegression()
-    f_i.fit(x_train.squeeze(), y_train)
-    preds_i = f_i.predict(x_test.squeeze()).squeeze()
-    loss_i = mean_squared_error(preds_i, y_test.squeeze())
-
+    f_i.fit(x_train, y_train)
+    loss_i_val = rmse(f_i.predict(x_val), y_val)
+    loss_i_test = rmse(f_i.predict(x_test), y_test)
 
     # Random Forests
-    f_c = RandomForestRegressor(n_estimators=16, random_state=129281, n_jobs=-1)
-    f_c.fit(x_train.squeeze(), y_train.squeeze())
-    preds_c = f_c.predict(x_test.squeeze()).squeeze()
-    loss_c_16 = mean_squared_error(preds_c, y_test.squeeze())
+    f_c = RandomForestRegressor(n_estimators=128, max_depth=8, random_state=12345, n_jobs=-1)
+    f_c.fit(x_train, y_train.squeeze())
+    loss_rf_val = rmse(f_c.predict(x_val).squeeze(), y_val)
+    loss_rf_test = rmse(f_c.predict(x_test).squeeze(), y_test)
 
-    f_c = RandomForestRegressor(n_estimators=32, random_state=129281, n_jobs=-1)
-    f_c.fit(x_train.squeeze(), y_train.squeeze())
-    preds_c = f_c.predict(x_test.squeeze()).squeeze()
-    loss_c_32 = mean_squared_error(preds_c, y_test.squeeze())
+    # Neural net
+    with fixedseed(np, 20231103):
+        preds_val = []
+        preds_test = []
+        for _ in range(10):
+            f_c = MLPRegressor((28,), learning_rate_init=lr, max_iter=500)
+            f_c.fit(x_train, y_train.squeeze())
+            preds_val.append(f_c.predict(x_val).reshape(-1, 1))
+            preds_test.append(f_c.predict(x_test).reshape(-1, 1))
 
-    f_c = RandomForestRegressor(n_estimators=64, random_state=129281, n_jobs=-1)
-    f_c.fit(x_train.squeeze(), y_train.squeeze())
-    preds_c = f_c.predict(x_test.squeeze()).squeeze()
-    loss_c_64 = mean_squared_error(preds_c, y_test.squeeze())
+    preds_val = np.median(np.concatenate(preds_val, axis=-1), axis=-1).squeeze()
+    preds_test = np.median(np.concatenate(preds_test, axis=-1), axis=-1).squeeze()
+    loss_nn_val = rmse(preds_val, y_val)
+    loss_nn_test = rmse(preds_test, y_test)
 
-    f_c = RandomForestRegressor(n_estimators=128, random_state=129281, n_jobs=-1)
-    f_c.fit(x_train.squeeze(), y_train.squeeze())
-    preds_c = f_c.predict(x_test.squeeze()).squeeze()
-    loss_c_128 = mean_squared_error(preds_c, y_test.squeeze())
+    # Baselines
+    loss_lv_val = rmse(x_val[..., -1:], y_val)
+    loss_lv_test = rmse(x_test[..., -1:], y_test)
+    loss_mean_val = rmse(x_val.mean(axis=-1).reshape(-1, 1), y_val) 
+    loss_mean_test = rmse(x_test.mean(axis=-1).reshape(-1, 1), y_test) 
 
-    '''
+    log_val.append({'lv': loss_lv_val, 'mean': loss_mean_val, 'linear': loss_i_val, 'nn': loss_nn_val, 'rf': loss_rf_val})
+    log_test.append({'lv': loss_lv_test, 'mean': loss_mean_test, 'linear': loss_i_test, 'nn': loss_nn_test, 'rf': loss_rf_test})
 
-    f_c = RandomForestRegressor(n_estimators=256, random_state=129281, n_jobs=-1)
-    f_c.fit(x_train.squeeze(), y_train.squeeze())
-    preds_c = f_c.predict(x_test.squeeze()).squeeze()
-    loss_c_256 = mean_squared_error(preds_c, y_test.squeeze())
-
-    f_c = RandomForestRegressor(n_estimators=512, random_state=129281, n_jobs=-1)
-    f_c.fit(x_train.squeeze(), y_train.squeeze())
-    preds_c = f_c.predict(x_test.squeeze()).squeeze()
-    loss_c_512 = mean_squared_error(preds_c, y_test.squeeze())
-
-    f_c = RandomForestRegressor(n_estimators=1024, random_state=129281, n_jobs=-1)
-    f_c.fit(x_train.squeeze(), y_train.squeeze())
-    preds_c = f_c.predict(x_test.squeeze()).squeeze()
-    loss_c_1024 = mean_squared_error(preds_c, y_test.squeeze())
-    '''
-
-    loss_lv = mean_squared_error(x_test[..., -1:].squeeze(), y_test.squeeze())
-    loss_mean = mean_squared_error(x_test.mean(axis=-1).reshape(-1, 1).squeeze(), y_test.squeeze()) 
-
-    log.append({'lv_test': loss_lv, 'mean_test': loss_mean, 'linear_test': loss_i, 'complex_test_16': loss_c_16, 'complex_test_32': loss_c_32, 'complex_test_64': loss_c_64, 'complex_test_128': loss_c_128})
-
-    return log
+    return log_val, log_test
 
 
 if __name__ == '__main__':
