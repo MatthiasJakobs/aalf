@@ -57,6 +57,7 @@ def get_complex(L, H, n_filters=32):
 def main():
     L = 10
 
+    '''
     ### Australian electricity demands
     X, horizons = load_monash('australian_electricity_demand', return_horizon=True)
     X = X['series_value']
@@ -93,6 +94,7 @@ def main():
     log_test.to_csv('results/kdd_test.csv')
 
     create_cdd('kdd')
+    '''
 
     ### weather
     X, horizons = load_monash('weather', return_horizon=True)
@@ -162,11 +164,15 @@ def run_experiment(log_val, log_test, X, L, H, lr=1e-3, verbose=False):
     with fixedseed(np, 20231103):
         preds_val = []
         preds_test = []
-        for _ in range(10):
-            f_c = MLPRegressor((28,), learning_rate_init=lr, max_iter=500)
-            f_c.fit(x_train, y_train.squeeze())
-            preds_val.append(f_c.predict(x_val).reshape(-1, 1))
-            preds_test.append(f_c.predict(x_test).reshape(-1, 1))
+        # for _ in range(10):
+        #     f_c = MLPRegressor((28,), learning_rate_init=lr, max_iter=500)
+        #     f_c.fit(x_train, y_train.squeeze())
+        #     preds_val.append(f_c.predict(x_val).reshape(-1, 1))
+        #     preds_test.append(f_c.predict(x_test).reshape(-1, 1))
+        f_c = MLPRegressor((28,), learning_rate_init=lr, max_iter=500)
+        f_c.fit(x_train, y_train.squeeze())
+        preds_val.append(f_c.predict(x_val).reshape(-1, 1))
+        preds_test.append(f_c.predict(x_test).reshape(-1, 1))
 
     preds_val = np.median(np.concatenate(preds_val, axis=-1), axis=-1).squeeze()
     preds_test = np.median(np.concatenate(preds_test, axis=-1), axis=-1).squeeze()
