@@ -4,6 +4,7 @@ import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import pickle
 
 from tsx.datasets.monash import load_m4_daily_bench, load_monash
 from tsx.datasets import windowing
@@ -19,8 +20,25 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import RandomizedSearchCV
 from seedpy import fixedseed
+from os import makedirs
 
 from cdd_plots import create_cdd
+
+class Ensemble:
+
+    def __init__(self, base_estimator, N, *args, **kwargs):
+        self.estimators = [base_estimator(*args, **kwargs) for _ in range(N)]
+
+    def fit(self, *args, **kwargs):
+        for estimator in self.estimators:
+            estimator.fit(*args, **kwargs)
+
+    def predict(self, X):
+        preds = []
+        for estimator in self.estimators:
+            preds.append(estimator.predict(X).reshape(-1, 1))
+        
+        return np.median(np.concatenate(preds, axis=-1), axis=-1).squeeze()
 
 def rmse(a, b):
     return mean_squared_error(a, b, squared=False)
@@ -66,7 +84,7 @@ def main():
     log_test = []
     for i, x in enumerate(X):
         print('-'*30, i, '-'*30)
-        log_val, log_test = run_experiment(log_val, log_test, x, L, H, verbose=True)
+        log_val, log_test = run_experiment(log_val, log_test, 'australian_electricity_demand', i, x, L, H, verbose=True)
 
     log_val = pd.DataFrame(log_val)
     log_val.index.rename('dataset_names', inplace=True)
@@ -84,7 +102,7 @@ def main():
     log_test = []
     for i, x in enumerate(X):
         print('-'*30, i, '-'*30)
-        log_val, log_test = run_experiment(log_val, log_test, x, L, horizons[i], verbose=True)
+        log_val, log_test = run_experiment(log_val, log_test, 'kdd', i, x, L, horizons[i], verbose=True)
 
     log_val = pd.DataFrame(log_val)
     log_val.index.rename('dataset_names', inplace=True)
@@ -103,7 +121,7 @@ def main():
     log_test = []
     for i, x in enumerate(X):
         print('-'*30, i, '-'*30)
-        log_val, log_test = run_experiment(log_val, log_test, x, L, horizons[i], verbose=True)
+        log_val, log_test = run_experiment(log_val, log_test, 'weather', i, x, L, horizons[i], verbose=True)
 
     log_val = pd.DataFrame(log_val)
     log_val.index.rename('dataset_names', inplace=True)
@@ -114,8 +132,9 @@ def main():
 
     create_cdd('weather')
 
-def run_experiment(log_val, log_test, X, L, H, lr=1e-3, verbose=False):
+def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbose=False):
     print(H, 'ts length', X.shape)
+    makedirs(f'models/{ds_name}/{ds_index}', exist_ok=True)
 
     # Split and normalize data
     end_train = int(len(X) * 0.5)
@@ -149,33 +168,44 @@ def run_experiment(log_val, log_test, X, L, H, lr=1e-3, verbose=False):
     y_test = y_test.astype(np.float32)
 
     # Train base models
-    f_i = LinearRegression()
-    f_i.fit(x_train, y_train)
+    try:
+        with open(f'models/{ds_name}/{ds_index}/linear.pickle', 'rb') as f:
+            f_i = pickle.load(f)
+    except Exception:
+        f_i = LinearRegression()
+        f_i.fit(x_train, y_train)
+        with open(f'models/{ds_name}/{ds_index}/linear.pickle', 'wb') as f:
+            pickle.dump(f_i, f)
+
     loss_i_val = rmse(f_i.predict(x_val), y_val)
     loss_i_test = rmse(f_i.predict(x_test), y_test)
 
     # Random Forests
-    f_c = RandomForestRegressor(n_estimators=128, max_depth=8, random_state=12345, n_jobs=-1)
-    f_c.fit(x_train, y_train.squeeze())
+    try:
+        with open(f'models/{ds_name}/{ds_index}/rf.pickle', 'rb') as f:
+            f_c = pickle.load(f)
+    except Exception:
+        f_c = RandomForestRegressor(n_estimators=128, max_depth=8, random_state=12345, n_jobs=-1)
+        f_c.fit(x_train, y_train.squeeze())
+        with open(f'models/{ds_name}/{ds_index}/rf.pickle', 'wb') as f:
+            pickle.dump(f_c, f)
+        
     loss_rf_val = rmse(f_c.predict(x_val).squeeze(), y_val)
     loss_rf_test = rmse(f_c.predict(x_test).squeeze(), y_test)
 
     # Neural net
-    with fixedseed(np, 20231103):
-        preds_val = []
-        preds_test = []
-        # for _ in range(10):
-        #     f_c = MLPRegressor((28,), learning_rate_init=lr, max_iter=500)
-        #     f_c.fit(x_train, y_train.squeeze())
-        #     preds_val.append(f_c.predict(x_val).reshape(-1, 1))
-        #     preds_test.append(f_c.predict(x_test).reshape(-1, 1))
-        f_c = MLPRegressor((28,), learning_rate_init=lr, max_iter=500)
-        f_c.fit(x_train, y_train.squeeze())
-        preds_val.append(f_c.predict(x_val).reshape(-1, 1))
-        preds_test.append(f_c.predict(x_test).reshape(-1, 1))
+    try:
+        with open(f'models/{ds_name}/{ds_index}/nn.pickle', 'rb') as f:
+            f_c = pickle.load(f)
+    except Exception:
+        with fixedseed(np, 20231103):
+            f_c = Ensemble(MLPRegressor, 10, (28,), learning_rate_init=lr, max_iter=500)
+            f_c.fit(x_train, y_train.squeeze())
+        with open(f'models/{ds_name}/{ds_index}/nn.pickle', 'wb') as f:
+            pickle.dump(f_c, f)
 
-    preds_val = np.median(np.concatenate(preds_val, axis=-1), axis=-1).squeeze()
-    preds_test = np.median(np.concatenate(preds_test, axis=-1), axis=-1).squeeze()
+    preds_val = f_c.predict(x_val)
+    preds_test = f_c.predict(x_test)
     loss_nn_val = rmse(preds_val, y_val)
     loss_nn_test = rmse(preds_test, y_test)
 
