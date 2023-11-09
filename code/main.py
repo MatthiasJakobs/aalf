@@ -167,6 +167,9 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
     y_val = y_val.astype(np.float32)
     y_test = y_test.astype(np.float32)
 
+    val_results = {}
+    test_results = {}
+
     # Train base models
     try:
         with open(f'models/{ds_name}/{ds_index}/linear.pickle', 'rb') as f:
@@ -177,8 +180,12 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
         with open(f'models/{ds_name}/{ds_index}/linear.pickle', 'wb') as f:
             pickle.dump(f_i, f)
 
-    loss_i_val = rmse(f_i.predict(x_val), y_val)
-    loss_i_test = rmse(f_i.predict(x_test), y_test)
+    lin_preds_val = f_i.predict(x_val)
+    lin_preds_test = f_i.predict(x_test)
+    loss_i_val = rmse(lin_preds_val, y_val)
+    loss_i_test = rmse(lin_preds_test, y_test)
+    val_results['linear'] = loss_i_val
+    test_results['linear'] = loss_i_test
 
     # Random Forests
     try:
@@ -192,6 +199,8 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
         
     loss_rf_val = rmse(f_c.predict(x_val).squeeze(), y_val)
     loss_rf_test = rmse(f_c.predict(x_test).squeeze(), y_test)
+    val_results['rf'] = loss_rf_val
+    test_results['rf'] = loss_rf_test
 
     # Neural net
     try:
@@ -204,19 +213,85 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
         with open(f'models/{ds_name}/{ds_index}/nn.pickle', 'wb') as f:
             pickle.dump(f_c, f)
 
-    preds_val = f_c.predict(x_val)
-    preds_test = f_c.predict(x_test)
-    loss_nn_val = rmse(preds_val, y_val)
-    loss_nn_test = rmse(preds_test, y_test)
+    nn_preds_val = f_c.predict(x_val)
+    nn_preds_test = f_c.predict(x_test)
+    loss_nn_val = rmse(nn_preds_val, y_val)
+    loss_nn_test = rmse(nn_preds_test, y_test)
+    val_results['nn'] = loss_nn_val
+    test_results['nn'] = loss_nn_test
 
     # Baselines
     loss_lv_val = rmse(x_val[..., -1:], y_val)
     loss_lv_test = rmse(x_test[..., -1:], y_test)
     loss_mean_val = rmse(x_val.mean(axis=-1).reshape(-1, 1), y_val) 
     loss_mean_test = rmse(x_test.mean(axis=-1).reshape(-1, 1), y_test) 
+    # val_results['lv'] = loss_lv_val
+    # test_results['lv'] = loss_lv_test
+    # val_results['mean'] = loss_mean_val
+    # test_results['mean'] = loss_mean_test
 
-    log_val.append({'lv': loss_lv_val, 'mean': loss_mean_val, 'linear': loss_i_val, 'nn': loss_nn_val, 'rf': loss_rf_val})
-    log_test.append({'lv': loss_lv_test, 'mean': loss_mean_test, 'linear': loss_i_test, 'nn': loss_nn_test, 'rf': loss_rf_test})
+    #####################################
+    # Model selection
+    #####################################
+    lin_preds_val = lin_preds_val.squeeze()
+    lin_preds_test = lin_preds_test.squeeze()
+    nn_preds_val = nn_preds_val.squeeze()
+    nn_preds_test = nn_preds_test.squeeze()
+    y_val = y_val.squeeze()
+    y_test = y_test.squeeze()
+
+    optimal_selection_val = (lin_preds_val-y_val)**2 <= (nn_preds_val-y_val)**2
+    optimal_selection_test = (lin_preds_test-y_test)**2 <= (nn_preds_test-y_test)**2
+    print('optimal selection val', np.mean(optimal_selection_val))
+    print('optimal selection test', np.mean(optimal_selection_test))
+
+    optimal_prediction_val = np.choose(optimal_selection_val, [nn_preds_val, lin_preds_val])
+    optimal_prediction_test = np.choose(optimal_selection_test, [nn_preds_test, lin_preds_test])
+    loss_optimal_val = rmse(optimal_prediction_val, y_val)
+    loss_optimal_test = rmse(optimal_prediction_test, y_test)
+    val_results['selOpt'] = loss_optimal_val
+    test_results['selOpt'] = loss_optimal_test
+
+    # -------------------------------- Threshold baseline
+    for thresh in [0.5, 0.99, 1.5, 1.7]:
+        thresh_selection_val = (lin_preds_val-nn_preds_val)**2 / (lin_preds_val**2 + nn_preds_val**2) <= thresh
+        thresh_selection_test = (lin_preds_test-nn_preds_test)**2 / (lin_preds_test**2 + nn_preds_test**2) <= thresh
+        # thresh_selection_val = (lin_preds_val-nn_preds_val)**2 <= thresh
+        # thresh_selection_test = (lin_preds_test-nn_preds_test)**2 <= thresh
+        print(f'{thresh} thresh selection val', np.mean(thresh_selection_val))
+        print(f'{thresh} thresh selection test', np.mean(thresh_selection_test))
+
+        thresh_prediction_val = np.choose(thresh_selection_val, [nn_preds_val, lin_preds_val])
+        thresh_prediction_test = np.choose(thresh_selection_test, [nn_preds_test, lin_preds_test])
+        loss_thresh_val = rmse(thresh_prediction_val, y_val)
+        loss_thresh_test = rmse(thresh_prediction_test, y_test)
+        val_results[f'selThresh{thresh}'] = loss_thresh_val
+        test_results[f'selThresh{thresh}'] = loss_thresh_test
+
+    # -------------------------------- Binomial baseline
+    rng = np.random.RandomState(934878167)
+    repeats = 3
+    
+    for p in [0.9, 0.95, 0.99]:
+        loss_binom_val = 0
+        loss_binom_test = 0
+        for _ in range(repeats):
+            binom_selection_val = rng.binomial(1, p, size=len(x_val))
+            binom_selection_test = rng.binomial(1, p, size=len(x_test))
+
+            binom_prediction_val = np.choose(binom_selection_val, [nn_preds_val, lin_preds_val])
+            binom_prediction_test = np.choose(binom_selection_test, [nn_preds_test, lin_preds_test])
+            loss_binom_val += rmse(binom_prediction_val, y_val)
+            loss_binom_test += rmse(binom_prediction_test, y_test)
+
+        loss_binom_val /= repeats
+        loss_binom_test /= repeats
+
+        val_results[f'selBinom{p}'] = loss_binom_val
+        test_results[f'selBinom{p}'] = loss_binom_test
+
+    log_val.append(val_results)
+    log_test.append(test_results)
 
     return log_val, log_test
 
