@@ -23,54 +23,11 @@ from seedpy import fixedseed
 from os import makedirs
 
 from cdd_plots import create_cdd
-
-class Ensemble:
-
-    def __init__(self, base_estimator, N, *args, **kwargs):
-        self.estimators = [base_estimator(*args, **kwargs) for _ in range(N)]
-
-    def fit(self, *args, **kwargs):
-        for estimator in self.estimators:
-            estimator.fit(*args, **kwargs)
-
-    def predict(self, X):
-        preds = []
-        for estimator in self.estimators:
-            preds.append(estimator.predict(X).reshape(-1, 1))
-        
-        return np.median(np.concatenate(preds, axis=-1), axis=-1).squeeze()
+from models import Ensemble, PyTorchLinear, PyTorchEnsemble
+from explainability import get_explanations
 
 def rmse(a, b):
     return mean_squared_error(a, b, squared=False)
-
-def get_simple(L, H):
-    with fixedseed(torch, 921172):
-        #model = NLinear(L, H, 1)
-        model = nn.Linear(L, H)
-    return model
-
-def get_complex(L, H, n_filters=32):
-    with fixedseed(torch, 493817):
-        model = nn.Sequential(
-
-            nn.Conv1d(1, n_filters, 3, padding='same'),
-            nn.BatchNorm1d(n_filters),
-            nn.ReLU(),
-
-            nn.Conv1d(n_filters, 2*n_filters, 3, padding='same'),
-            nn.BatchNorm1d(2*n_filters),
-            nn.ReLU(),
-
-            nn.Conv1d(2 * n_filters, 3*n_filters, 3, padding='same'),
-            nn.BatchNorm1d(3*n_filters),
-            nn.ReLU(),
-
-            nn.Flatten(),
-
-            nn.Linear(L * 3 * n_filters, H)
-
-        )
-    return model
 
 def main():
     L = 10
@@ -289,6 +246,39 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
 
         val_results[f'selBinom{p}'] = loss_binom_val
         test_results[f'selBinom{p}'] = loss_binom_test
+
+    # -------------------------------- RoC based methods
+
+    makedirs(f'explanations/{ds_name}/{ds_index}', exist_ok=True)
+    pt_linear = PyTorchLinear(f_i)
+    pt_ensemble = PyTorchEnsemble(f_c)
+
+    # Find best models on each validation datapoint
+    lin_error = (pt_linear.predict(x_val).squeeze() - y_val)**2
+    ensemble_error = (pt_ensemble.predict(x_val).squeeze() - y_val)**2
+    selection = (lin_error <= ensemble_error)
+    print('percentage linear chosen', selection.mean())
+    
+    # Compute explanations on validation data points
+    try:
+        lin_expl = np.load(f'explanations/{ds_name}/{ds_index}/lin_expl.npy')
+        ensemble_expl = np.load(f'explanations/{ds_name}/{ds_index}/ensemble_expl.npy')
+    except Exception:
+        rng = np.random.RandomState(20231110 + ds_index)
+        #background = x_train[rng.choice(np.arange(len(x_train)), size=100, replace=False)]
+        #background = torch.from_numpy(background) 
+        background = x_train
+        print(background.shape)
+
+        lin_indices = np.where(selection)[0]
+        ensemble_indices = np.where(~selection)[0]
+        lin_expl = get_explanations(pt_linear, torch.from_numpy(x_val[lin_indices]), torch.from_numpy(y_val[lin_indices]), torch.from_numpy(x_train))
+        ensemble_expl = get_explanations(pt_ensemble, torch.from_numpy(x_val[ensemble_indices]), torch.from_numpy(y_val[ensemble_indices]), torch.from_numpy(x_train))
+        np.save(f'explanations/{ds_name}/{ds_index}/lin_expl.npy', lin_expl)
+        np.save(f'explanations/{ds_name}/{ds_index}/ensemble_expl.npy', ensemble_expl)
+
+    print(lin_expl.shape)
+    print(ensemble_expl.shape)
 
     log_val.append(val_results)
     log_test.append(test_results)
