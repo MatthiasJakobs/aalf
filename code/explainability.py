@@ -6,12 +6,12 @@ import tqdm
 from models import Ensemble, PyTorchEnsemble, PyTorchLinear
 from captum.attr import DeepLiftShap
 
-def get_explanations(model, X, y, background, batch_size=16):
+def get_explanations(model, X, y, background):
     explainer = DeepLiftShap(model)
     explanations = []
 
-    for i in tqdm.trange(0, len(X), batch_size):
-        explanations.append(explainer.attribute(X[i:(i+batch_size)], background, additional_forward_args=(y[i:i+batch_size],)).detach().cpu().numpy())
+    for i in tqdm.trange(len(X)):
+        explanations.append(explainer.attribute(X[i].reshape(1, -1), background, additional_forward_args=y[i].reshape(1, -1)).detach().cpu().numpy().reshape(1, -1))
 
     return np.concatenate(explanations, axis=0)
 
