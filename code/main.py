@@ -286,8 +286,9 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
         indices = rng.choice(np.arange(len(x_train)), size=min(1000, len(x_train)), replace=False)
         background = x_train[indices]
 
-        lin_expl = get_explanations(pt_linear, torch.from_numpy(x_val[lin_indices]), torch.from_numpy(y_val[lin_indices]), torch.from_numpy(background))
-        ensemble_expl = get_explanations(pt_ensemble, torch.from_numpy(x_val[ensemble_indices]), torch.from_numpy(y_val[ensemble_indices]), torch.from_numpy(background))
+        with fixedseed([torch, np], seed=(20231110+ds_index)):
+            lin_expl = get_explanations(pt_linear, torch.from_numpy(x_val[lin_indices]), torch.from_numpy(y_val[lin_indices]), torch.from_numpy(background))
+            ensemble_expl = get_explanations(pt_ensemble, torch.from_numpy(x_val[ensemble_indices]), torch.from_numpy(y_val[ensemble_indices]), torch.from_numpy(background))
         np.save(f'explanations/{ds_name}/{ds_index}/lin_expl.npy', lin_expl)
         np.save(f'explanations/{ds_name}/{ds_index}/ensemble_expl.npy', ensemble_expl)
 
