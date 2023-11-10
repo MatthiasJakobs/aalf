@@ -25,9 +25,25 @@ from os import makedirs
 from cdd_plots import create_cdd
 from models import Ensemble, PyTorchLinear, PyTorchEnsemble
 from explainability import get_explanations
+from tsx.model_selection import ROC_Member
+from tsx.models.forecaster import split_zero
 
 def rmse(a, b):
     return mean_squared_error(a, b, squared=False)
+
+def compute_rocs(x, y, explanations, threshold=0):
+    # Threshold and invert explanations 
+    explanations =  explanations / explanations.sum(axis=1).reshape(-1, 1)
+    explanations = -explanations * ((-explanations) > threshold)
+
+    rocs = []
+    for i, e in enumerate(explanations):
+        splits = split_zero(e, min_size=3)
+        for (f, t) in splits:
+            r = ROC_Member(x[i], y[i], np.arange(t-f+1)+f)
+            rocs.append(r)
+
+    return rocs
 
 def main():
     L = 10
@@ -257,6 +273,8 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
     lin_error = (pt_linear.predict(x_val).squeeze() - y_val)**2
     ensemble_error = (pt_ensemble.predict(x_val).squeeze() - y_val)**2
     selection = (lin_error <= ensemble_error)
+    lin_indices = np.where(selection)[0]
+    ensemble_indices = np.where(~selection)[0]
     print('percentage linear chosen', selection.mean())
     
     # Compute explanations on validation data points
@@ -265,23 +283,46 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
         ensemble_expl = np.load(f'explanations/{ds_name}/{ds_index}/ensemble_expl.npy')
     except Exception:
         rng = np.random.RandomState(20231110 + ds_index)
-        #background = x_train[rng.choice(np.arange(len(x_train)), size=100, replace=False)]
-        #background = torch.from_numpy(background) 
-        background = x_train
-        print(background.shape)
+        indices = rng.choice(np.arange(len(x_train)), size=min(1000, len(x_train)), replace=False)
+        background = x_train[indices]
 
-        lin_indices = np.where(selection)[0]
-        ensemble_indices = np.where(~selection)[0]
-        lin_expl = get_explanations(pt_linear, torch.from_numpy(x_val[lin_indices]), torch.from_numpy(y_val[lin_indices]), torch.from_numpy(x_train))
-        ensemble_expl = get_explanations(pt_ensemble, torch.from_numpy(x_val[ensemble_indices]), torch.from_numpy(y_val[ensemble_indices]), torch.from_numpy(x_train))
+        lin_expl = get_explanations(pt_linear, torch.from_numpy(x_val[lin_indices]), torch.from_numpy(y_val[lin_indices]), torch.from_numpy(background))
+        ensemble_expl = get_explanations(pt_ensemble, torch.from_numpy(x_val[ensemble_indices]), torch.from_numpy(y_val[ensemble_indices]), torch.from_numpy(background))
         np.save(f'explanations/{ds_name}/{ds_index}/lin_expl.npy', lin_expl)
         np.save(f'explanations/{ds_name}/{ds_index}/ensemble_expl.npy', ensemble_expl)
 
-    print(lin_expl.shape)
-    print(ensemble_expl.shape)
+    # Threshold negative loss attributions
+    thresh = 0
+
+    lin_rocs = compute_rocs(x_val[lin_indices], y_val[lin_indices], lin_expl)
+    ensemble_rocs = compute_rocs(x_val[ensemble_indices], y_val[ensemble_indices], ensemble_expl)
+    print('nr lin RoCs', len(lin_rocs))
+    print('nr ensemble RoCs', len(ensemble_rocs))
 
     log_val.append(val_results)
     log_test.append(test_results)
+
+    # Run experiments
+    test_selection = []
+    sel_threshold = 5
+    for _x in x_test:
+        lin_min_dist = min([lin_roc.euclidean_distance(_x) for lin_roc in lin_rocs])
+        ensemble_min_dist = min([ensemble_roc.euclidean_distance(_x) for ensemble_roc in ensemble_rocs])
+        if lin_min_dist <= ensemble_min_dist:
+            test_selection.append(1)
+        else:
+            test_selection.append(0)
+        #     continue
+        # if ensemble_min_dist-lin_min_dist < sel_threshold:
+        #     test_selection.append(1)
+        # else:
+        #     test_selection.append(0)
+
+    test_selection = np.array(test_selection)
+    print('new selection percent linear', np.mean(test_selection))
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[f'new'] = loss_test_test
 
     return log_val, log_test
 

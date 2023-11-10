@@ -6,6 +6,11 @@ import tqdm
 from models import Ensemble, PyTorchEnsemble, PyTorchLinear
 from captum.attr import DeepLiftShap
 
+def warn(*args, **kwargs):
+    pass
+import warnings
+warnings.warn = warn
+
 def get_explanations(model, X, y, background):
     explainer = DeepLiftShap(model)
     explanations = []
