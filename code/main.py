@@ -307,6 +307,14 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
     test_selection = []
     sel_threshold = 5
     for _x in x_test:
+        if len(ensemble_rocs) == 0:
+            # Choose linear
+            test_selection.append(1)
+            continue
+        if len(lin_rocs) == 0:
+            test_selection.append(0)
+            continue
+
         lin_min_dist = min([lin_roc.euclidean_distance(_x) for lin_roc in lin_rocs])
         ensemble_min_dist = min([ensemble_roc.euclidean_distance(_x) for ensemble_roc in ensemble_rocs])
         if lin_min_dist <= ensemble_min_dist:
