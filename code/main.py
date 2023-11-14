@@ -24,6 +24,8 @@ from os import makedirs
 
 from cdd_plots import create_cdd
 from models import Ensemble, PyTorchLinear, PyTorchEnsemble
+from selection import run_v1, run_v2
+from viz import plot_rocs
 from explainability import get_explanations
 from tsx.model_selection import ROC_Member
 from tsx.models.forecaster import split_zero
@@ -37,6 +39,8 @@ def compute_rocs(x, y, explanations, threshold=0):
     explanations = -explanations * ((-explanations) > threshold)
 
     rocs = []
+    if len(x) == 0:
+        return rocs
     for i, e in enumerate(explanations):
         splits = split_zero(e, min_size=3)
         for (f, t) in splits:
@@ -93,6 +97,8 @@ def main():
     log_val = []
     log_test = []
     for i, x in enumerate(X):
+        if i < 500:
+            continue
         print('-'*30, i, '-'*30)
         log_val, log_test = run_experiment(log_val, log_test, 'weather', i, x, L, horizons[i], verbose=True)
 
@@ -286,9 +292,30 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
         indices = rng.choice(np.arange(len(x_train)), size=min(1000, len(x_train)), replace=False)
         background = x_train[indices]
 
+        # If available, use gpu acceleration
+        pt_xval_lin = torch.from_numpy(x_val[lin_indices])
+        pt_yval_lin = torch.from_numpy(y_val[lin_indices])
+
+        pt_xval_ens = torch.from_numpy(x_val[ensemble_indices])
+        pt_yval_ens = torch.from_numpy(y_val[ensemble_indices])
+
+        pt_background = torch.from_numpy(background)
+        if torch.cuda.is_available():
+            pt_xval_lin = pt_xval_lin.to('cuda')
+            pt_xval_ens = pt_xval_ens.to('cuda')
+            pt_yval_lin = pt_yval_lin.to('cuda')
+            pt_yval_ens = pt_yval_ens.to('cuda')
+            pt_background = pt_background.to('cuda')
+            
+            for estimator in pt_ensemble.ensemble:
+                estimator.to('cuda')
+
+            pt_linear.lin.to('cuda')
+
+
         with fixedseed([torch, np], seed=(20231110+ds_index)):
-            lin_expl = get_explanations(pt_linear, torch.from_numpy(x_val[lin_indices]), torch.from_numpy(y_val[lin_indices]), torch.from_numpy(background))
-            ensemble_expl = get_explanations(pt_ensemble, torch.from_numpy(x_val[ensemble_indices]), torch.from_numpy(y_val[ensemble_indices]), torch.from_numpy(background))
+            lin_expl = get_explanations(pt_linear, pt_xval_lin, pt_yval_lin, background)
+            ensemble_expl = get_explanations(pt_ensemble, pt_xval_ens, pt_yval_ens, background)
         np.save(f'explanations/{ds_name}/{ds_index}/lin_expl.npy', lin_expl)
         np.save(f'explanations/{ds_name}/{ds_index}/ensemble_expl.npy', ensemble_expl)
 
@@ -299,39 +326,36 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
     ensemble_rocs = compute_rocs(x_val[ensemble_indices], y_val[ensemble_indices], ensemble_expl)
     print('nr lin RoCs', len(lin_rocs))
     print('nr ensemble RoCs', len(ensemble_rocs))
+    
+    # makedirs(f'plots/{ds_name}', exist_ok=True)
+    # plot_rocs(lin_rocs, ensemble_rocs, f'plots/{ds_name}/{ds_index}.pdf')
 
     log_val.append(val_results)
     log_test.append(test_results)
 
-    # Run experiments
-    test_selection = []
-    sel_threshold = 5
-    for _x in x_test:
-        if len(ensemble_rocs) == 0:
-            # Choose linear
-            test_selection.append(1)
-            continue
-        if len(lin_rocs) == 0:
-            test_selection.append(0)
-            continue
-
-        lin_min_dist = min([lin_roc.euclidean_distance(_x) for lin_roc in lin_rocs])
-        ensemble_min_dist = min([ensemble_roc.euclidean_distance(_x) for ensemble_roc in ensemble_rocs])
-        if lin_min_dist <= ensemble_min_dist:
-            test_selection.append(1)
-        else:
-            test_selection.append(0)
-        #     continue
-        # if ensemble_min_dist-lin_min_dist < sel_threshold:
-        #     test_selection.append(1)
-        # else:
-        #     test_selection.append(0)
-
-    test_selection = np.array(test_selection)
-    print('new selection percent linear', np.mean(test_selection))
+    # ------------------ Run new selection methods
+    
+    # v1
+    name, test_selection = run_v1(x_test, lin_rocs, ensemble_rocs)
     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
     loss_test_test = rmse(test_prediction_test, y_test)
-    test_results[f'new'] = loss_test_test
+    test_results[name] = loss_test_test
+
+    # v2
+    name, test_selection = run_v2(x_test, lin_rocs, ensemble_rocs, 0.90, random_state=20231113)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
+
+    name, test_selection = run_v2(x_test, lin_rocs, ensemble_rocs, 0.95, random_state=20231113)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
+
+    name, test_selection = run_v2(x_test, lin_rocs, ensemble_rocs, 0.99, random_state=20231113)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
 
     return log_val, log_test
 

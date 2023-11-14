@@ -18,6 +18,8 @@ def get_explanations(model, X, y, background):
     for i in tqdm.trange(len(X)):
         explanations.append(explainer.attribute(X[i].reshape(1, -1), background, additional_forward_args=y[i].reshape(1, -1)).detach().cpu().numpy().reshape(1, -1))
 
+    if len(explanations) == 0:
+        return np.zeros((1, X.shape[-1]))
     return np.concatenate(explanations, axis=0)
 
 def main():
