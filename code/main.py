@@ -24,7 +24,7 @@ from os import makedirs
 
 from cdd_plots import create_cdd
 from models import Ensemble, PyTorchLinear, PyTorchEnsemble
-from selection import run_v1, run_v2
+from selection import run_v1, run_v2, run_v3
 from viz import plot_rocs
 from explainability import get_explanations
 from tsx.model_selection import ROC_Member
@@ -353,6 +353,27 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
     test_results[name] = loss_test_test
 
     name, test_selection = run_v2(x_test, lin_rocs, ensemble_rocs, 0.99, random_state=20231113)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
+
+    # v3
+    name, test_selection = run_v3(x_test, lin_rocs, ensemble_rocs, 1.2)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
+
+    name, test_selection = run_v3(x_test, lin_rocs, ensemble_rocs, 1.5)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
+
+    name, test_selection = run_v3(x_test, lin_rocs, ensemble_rocs, 2)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
+
+    name, test_selection = run_v3(x_test, lin_rocs, ensemble_rocs, 3)
     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
     loss_test_test = rmse(test_prediction_test, y_test)
     test_results[name] = loss_test_test
