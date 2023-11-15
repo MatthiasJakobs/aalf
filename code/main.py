@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import pickle
+import time
 
 from tsx.datasets.monash import load_m4_daily_bench, load_monash
 from tsx.datasets import windowing
@@ -97,7 +98,7 @@ def main():
     log_val = []
     log_test = []
     for i, x in enumerate(X):
-        if i < 500:
+        if i < 720:
             continue
         print('-'*30, i, '-'*30)
         log_val, log_test = run_experiment(log_val, log_test, 'weather', i, x, L, horizons[i], verbose=True)
@@ -301,6 +302,7 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
 
         pt_background = torch.from_numpy(background)
         if torch.cuda.is_available():
+            before = time.time()
             pt_xval_lin = pt_xval_lin.to('cuda')
             pt_xval_ens = pt_xval_ens.to('cuda')
             pt_yval_lin = pt_yval_lin.to('cuda')
@@ -311,13 +313,18 @@ def run_experiment(log_val, log_test, ds_name, ds_index, X, L, H, lr=1e-3, verbo
                 estimator.to('cuda')
 
             pt_linear.lin.to('cuda')
+            after = time.time()
+            print('x', pt_xval_lin.shape, pt_xval_ens.shape, 'y', pt_yval_lin.shape, pt_yval_ens.shape, 'bg', pt_background.shape)
+            print('copying took', after-before, 'seconds')
 
 
         with fixedseed([torch, np], seed=(20231110+ds_index)):
-            lin_expl = get_explanations(pt_linear, pt_xval_lin, pt_yval_lin, background)
-            ensemble_expl = get_explanations(pt_ensemble, pt_xval_ens, pt_yval_ens, background)
+            lin_expl = get_explanations(pt_linear, pt_xval_lin, pt_yval_lin, pt_background)
+            ensemble_expl = get_explanations(pt_ensemble, pt_xval_ens, pt_yval_ens, pt_background)
         np.save(f'explanations/{ds_name}/{ds_index}/lin_expl.npy', lin_expl)
         np.save(f'explanations/{ds_name}/{ds_index}/ensemble_expl.npy', ensemble_expl)
+
+    return log_val, log_test
 
     # Threshold negative loss attributions
     thresh = 0
