@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
 from tslearn.clustering import TimeSeriesKMeans
@@ -73,3 +74,16 @@ def plot_rocs(roc_lin, roc_complex, save_path):
     #fig.savefig(save_path)
     fig.savefig('test.png')
     exit()
+
+def plot_selection_percentage(ds_name):
+    df = pd.read_csv(f'results/{ds_name}_selection.csv')
+    names = df.columns[1:]
+    plt.figure()
+    plt.boxplot(df.iloc[:, 1:].to_numpy())
+    plt.xticks(ticks=np.arange(len(names))+1, labels=names.tolist(), rotation=90)
+    plt.tight_layout()
+    plt.savefig('test.png')
+    print(names)
+    
+if __name__ == '__main__':
+    plot_selection_percentage('weather')

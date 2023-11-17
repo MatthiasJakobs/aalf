@@ -1,9 +1,9 @@
 import numpy as np
 import pandas as pd
-from critdd import Diagrams
+from critdd import Diagrams, Diagram
 from os import remove
 
-def create_cdd(ds_name):
+def create_cdd(ds_name, drop_columns=None):
     df_val = pd.read_csv(f'results/{ds_name}_val.csv')
     df_val = df_val.set_index('dataset_names')
     df_test = pd.read_csv(f'results/{ds_name}_test.csv')
@@ -19,10 +19,13 @@ def create_cdd(ds_name):
         print('At least two columns equal in test')
         print(df_test)
 
-    diagram = Diagrams(
-        np.stack([df_val.to_numpy(), df_test.to_numpy()]),
-        treatment_names = df_val.columns,
-        diagram_names=['validation', 'test'],
+    if drop_columns is not None:
+        df_test.drop(columns=drop_columns)
+
+    diagram = Diagram(
+        df_test.to_numpy(),
+        treatment_names = df_test.columns,
+        #diagram_names=['validation', 'test'],
         maximize_outcome = False
     )
 
@@ -122,3 +125,9 @@ def create_cdd(ds_name):
     # Cleanup temp files
     remove(f'{ds_name}.aux')
     remove(f'{ds_name}.log')
+
+def main():
+    create_cdd('weather', ['v1'])
+
+if __name__ == '__main__':
+    main()
