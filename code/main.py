@@ -25,7 +25,7 @@ from os import makedirs
 
 from cdd_plots import create_cdd
 from models import Ensemble, PyTorchLinear, PyTorchEnsemble
-from selection import run_v1, run_v2, run_v3, run_v4, selection_oracle_percent
+from selection import run_v1, run_v2, run_v3, run_v4, run_v5, selection_oracle_percent
 from viz import plot_rocs
 from explainability import get_explanations
 from tsx.model_selection import ROC_Member
@@ -98,9 +98,14 @@ def main():
     log_val = []
     log_test = []
     log_selection = []
-    for i, x in enumerate(X):
+
+    # Choose subset
+    rng = np.random.RandomState(12389182)
+    indices = rng.choice(np.arange(3000), size=30, replace=False)
+
+    for i in indices:
         print('-'*30, i, '-'*30)
-        log_val, log_test, log_selection = run_experiment(log_val, log_test, log_selection, 'weather', i, x, L, horizons[i], verbose=True)
+        log_val, log_test, log_selection = run_experiment(log_val, log_test, log_selection, 'weather', i, X[i], L, horizons[i], verbose=True)
 
     log_val = pd.DataFrame(log_val)
     log_val.index.rename('dataset_names', inplace=True)
@@ -170,21 +175,6 @@ def run_experiment(log_val, log_test, log_selection, ds_name, ds_index, X, L, H,
     val_results['linear'] = loss_i_val
     test_results['linear'] = loss_i_test
 
-    # Random Forests
-    try:
-        with open(f'models/{ds_name}/{ds_index}/rf.pickle', 'rb') as f:
-            f_c = pickle.load(f)
-    except Exception:
-        f_c = RandomForestRegressor(n_estimators=128, max_depth=8, random_state=12345, n_jobs=-1)
-        f_c.fit(x_train, y_train.squeeze())
-        with open(f'models/{ds_name}/{ds_index}/rf.pickle', 'wb') as f:
-            pickle.dump(f_c, f)
-        
-    loss_rf_val = rmse(f_c.predict(x_val).squeeze(), y_val)
-    loss_rf_test = rmse(f_c.predict(x_test).squeeze(), y_test)
-    # val_results['rf'] = loss_rf_val
-    # test_results['rf'] = loss_rf_test
-
     # Neural net
     try:
         with open(f'models/{ds_name}/{ds_index}/nn.pickle', 'rb') as f:
@@ -225,8 +215,6 @@ def run_experiment(log_val, log_test, log_selection, ds_name, ds_index, X, L, H,
 
     optimal_selection_val = (lin_preds_val-y_val)**2 <= (nn_preds_val-y_val)**2
     optimal_selection_test = (lin_preds_test-y_test)**2 <= (nn_preds_test-y_test)**2
-    print('optimal selection val', np.mean(optimal_selection_val))
-    print('optimal selection test', np.mean(optimal_selection_test))
 
     optimal_prediction_val = np.choose(optimal_selection_val, [nn_preds_val, lin_preds_val])
     optimal_prediction_test = np.choose(optimal_selection_test, [nn_preds_test, lin_preds_test])
@@ -249,8 +237,6 @@ def run_experiment(log_val, log_test, log_selection, ds_name, ds_index, X, L, H,
         thresh_selection_test = (lin_preds_test-nn_preds_test)**2 / (lin_preds_test**2 + nn_preds_test**2) <= thresh
         # thresh_selection_val = (lin_preds_val-nn_preds_val)**2 <= thresh
         # thresh_selection_test = (lin_preds_test-nn_preds_test)**2 <= thresh
-        print(f'{thresh} thresh selection val', np.mean(thresh_selection_val))
-        print(f'{thresh} thresh selection test', np.mean(thresh_selection_test))
 
         thresh_prediction_val = np.choose(thresh_selection_val, [nn_preds_val, lin_preds_val])
         thresh_prediction_test = np.choose(thresh_selection_test, [nn_preds_test, lin_preds_test])
@@ -294,7 +280,6 @@ def run_experiment(log_val, log_test, log_selection, ds_name, ds_index, X, L, H,
     selection = (lin_error <= ensemble_error)
     lin_indices = np.where(selection)[0]
     ensemble_indices = np.where(~selection)[0]
-    print('percentage linear chosen', selection.mean())
     
     # Compute explanations on validation data points
     try:
@@ -336,13 +321,10 @@ def run_experiment(log_val, log_test, log_selection, ds_name, ds_index, X, L, H,
         np.save(f'explanations/{ds_name}/{ds_index}/lin_expl.npy', lin_expl)
         np.save(f'explanations/{ds_name}/{ds_index}/ensemble_expl.npy', ensemble_expl)
 
-    # Threshold negative loss attributions
-    thresh = 0
-
+    # Load (or compute) rocs
+    makedirs(f'rocs/{ds_name}/{ds_index}', exist_ok=True)
     lin_rocs = compute_rocs(x_val[lin_indices], y_val[lin_indices], lin_expl)
     ensemble_rocs = compute_rocs(x_val[ensemble_indices], y_val[ensemble_indices], ensemble_expl)
-    print('nr lin RoCs', len(lin_rocs))
-    print('nr ensemble RoCs', len(ensemble_rocs))
     
     # makedirs(f'plots/{ds_name}', exist_ok=True)
     # plot_rocs(lin_rocs, ensemble_rocs, f'plots/{ds_name}/{ds_index}.pdf')
@@ -356,62 +338,37 @@ def run_experiment(log_val, log_test, log_selection, ds_name, ds_index, X, L, H,
     test_results[name] = loss_test_test
     selection_results[name] = np.mean(test_selection)
 
-    # v2
-    # name, test_selection = run_v2(x_test, lin_rocs, ensemble_rocs, 0.90, random_state=20231113)
-    # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    # loss_test_test = rmse(test_prediction_test, y_test)
-    # test_results[name] = loss_test_test
-    #selection_results[name] = np.mean(test_selection)
-
-    # name, test_selection = run_v2(x_test, lin_rocs, ensemble_rocs, 0.95, random_state=20231113)
-    # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    # loss_test_test = rmse(test_prediction_test, y_test)
-    # test_results[name] = loss_test_test
-    #selection_results[name] = np.mean(test_selection)
-
-    # name, test_selection = run_v2(x_test, lin_rocs, ensemble_rocs, 0.99, random_state=20231113)
-    # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    # loss_test_test = rmse(test_prediction_test, y_test)
-    # test_results[name] = loss_test_test
-    #selection_results[name] = np.mean(test_selection)
-
-    # v3
-    name, test_selection = run_v3(x_test, lin_rocs, ensemble_rocs, 1.2)
-    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    loss_test_test = rmse(test_prediction_test, y_test)
-    test_results[name] = loss_test_test
-    selection_results[name] = np.mean(test_selection)
-
-    name, test_selection = run_v3(x_test, lin_rocs, ensemble_rocs, 1.5)
-    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    loss_test_test = rmse(test_prediction_test, y_test)
-    test_results[name] = loss_test_test
-    selection_results[name] = np.mean(test_selection)
-
-    name, test_selection = run_v3(x_test, lin_rocs, ensemble_rocs, 2)
-    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    loss_test_test = rmse(test_prediction_test, y_test)
-    test_results[name] = loss_test_test
-    selection_results[name] = np.mean(test_selection)
-
-    name, test_selection = run_v3(x_test, lin_rocs, ensemble_rocs, 3)
-    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    loss_test_test = rmse(test_prediction_test, y_test)
-    test_results[name] = loss_test_test
-    selection_results[name] = np.mean(test_selection)
-
     # v4
-    name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index)
-    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    loss_test_test = rmse(test_prediction_test, y_test)
-    test_results[name] = loss_test_test
-    selection_results[name] = np.mean(test_selection)
-
-    # name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, include_predictions=False)
+    # name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index)
     # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
     # loss_test_test = rmse(test_prediction_test, y_test)
     # test_results[name] = loss_test_test
     # selection_results[name] = np.mean(test_selection)
+
+    # name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, calibrate=True)
+    # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    # loss_test_test = rmse(test_prediction_test, y_test)
+    # test_results[name] = loss_test_test
+    # selection_results[name] = np.mean(test_selection)
+
+    # v5
+    name, test_selection = run_v5(x_val, y_val, x_test, y_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, p=0.99)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
+    selection_results[name] = np.mean(test_selection)
+
+    name, test_selection = run_v5(x_val, y_val, x_test, y_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, p=0.95)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
+    selection_results[name] = np.mean(test_selection)
+
+    name, test_selection = run_v5(x_val, y_val, x_test, y_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, p=0.90)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
+    selection_results[name] = np.mean(test_selection)
 
     log_val.append(val_results)
     log_test.append(test_results)

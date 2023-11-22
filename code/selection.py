@@ -98,11 +98,11 @@ def run_v3(x_test, lin_rocs, ensemble_rocs, thresh):
     return name, test_selection
 
 # Train classifier based on RoC distances and optimal validation selection
-def run_v4(val_selection, x_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, include_predictions=True):
-    if include_predictions:
-        name = f'v4_both'
+def run_v4(val_selection, x_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, calibrate=False):
+    if calibrate:
+        name = f'v4_calibrated'
     else:
-        name = f'v4_roc'
+        name = f'v4'
     # What to do if empty rocs
     if len(ensemble_rocs) == 0:
         # Choose linear
@@ -113,19 +113,56 @@ def run_v4(val_selection, x_val, x_test, lin_val_preds, ens_val_preds, lin_test_
 
     lin_min_dist, ensemble_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
 
-    if include_predictions:
-        X_train = np.vstack([lin_val_preds, ens_val_preds, lin_min_dist, ensemble_min_dist]).T
-    else:
-        X_train = np.vstack([lin_min_dist, ensemble_min_dist]).T
+    X_train = np.vstack([lin_val_preds, ens_val_preds, lin_min_dist, ensemble_min_dist]).T
     y_train = val_selection
 
     clf = RandomForestClassifier(random_state=random_state)
     clf.fit(X_train, y_train)
 
     lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
-    if include_predictions:
-        X_test = np.vstack([lin_test_preds, ens_test_preds, lin_min_dist, ensemble_min_dist]).T
+    X_test = np.vstack([lin_test_preds, ens_test_preds, lin_min_dist, ensemble_min_dist]).T
+
+    # Very simple calibration 
+    best_thresh = 0.5
+    if calibrate:
+        n_calib = 15
+        fn_train = len(y_train) - np.sum(clf.predict(X_train)[y_train == 1])
+        thresholds = np.arange(n_calib)[1:] / (2*n_calib)
+        for thresh in thresholds:
+            new_fn = len(y_train) - np.sum((clf.predict_proba(X_train)[:, 1] >= thresh)[y_train == 1])
+            if new_fn < fn_train:
+                fn_train = new_fn
+                best_thresh = thresh
+
+        print('best thresh', best_thresh)
+
+    return name, (clf.predict_proba(X_test)[:, 1] >= best_thresh).astype(np.int8)
+
+# Train on biggest errors in validation set
+def run_v5(x_val, y_val, x_test, y_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, p=0.99, calibrate=False):
+    if calibrate:
+        name = f'v5_{p}_calibrated'
     else:
-        X_test = np.vstack([lin_min_dist, ensemble_min_dist]).T
+        name = f'v5_{p}'
+    # What to do if empty rocs
+    if len(ensemble_rocs) == 0:
+        # Choose linear
+        return name, np.ones((len(x_test))).astype(np.int8)
+    if len(lin_rocs) == 0:
+        # Choose complex
+        return name, np.zeros((len(x_test))).astype(np.int8)
+
+    lin_min_dist, ensemble_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
+
+    y_train = selection_oracle_percent(y_val, lin_val_preds, ens_val_preds, p)
+    X_train = np.vstack([lin_val_preds, ens_val_preds, lin_min_dist, ensemble_min_dist]).T
+
+    clf = RandomForestClassifier(n_estimators=500, random_state=random_state)
+    clf.fit(X_train, y_train)
+
+    lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
+    X_test = np.vstack([lin_test_preds, ens_test_preds, lin_min_dist, ensemble_min_dist]).T
+    oracle_y = selection_oracle_percent(y_test, lin_test_preds, ens_test_preds, p)
+    print('train f1', f1_score(clf.predict(X_train), y_train), 'test f1', f1_score(clf.predict(X_test), oracle_y), clf.predict(X_test).mean())
 
     return name, clf.predict(X_test)
