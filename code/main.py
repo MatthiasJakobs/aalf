@@ -136,8 +136,8 @@ def main():
 
     # Choose subset
     rng = np.random.RandomState(12389182)
-    run_size = len(X)
-    #run_size = 600
+    #run_size = len(X)
+    run_size = 300
     indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
 
     # indices = rng.choice(np.arange(len(X)), size=10, replace=False)
@@ -268,12 +268,12 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3):
     test_results['selOpt'] = loss_optimal_test
     selection_results['selOpt'] = np.mean(optimal_selection_test)
 
-    for p_lin in [0.9, 0.95, 0.99]:
-        oracle_selection = selection_oracle_percent(y_test, lin_preds_test, nn_preds_test, p_lin)
-        oracle_prediction_test = np.choose(oracle_selection, [nn_preds_test, lin_preds_test])
-        loss_oracle_test = rmse(oracle_prediction_test, y_test)
-        test_results[f'oracle_{p_lin}'] = loss_oracle_test
-        selection_results[f'oracle_{p_lin}'] = np.mean(oracle_selection)
+    # for p_lin in [0.9, 0.95, 0.99]:
+    #     oracle_selection = selection_oracle_percent(y_test, lin_preds_test, nn_preds_test, p_lin)
+    #     oracle_prediction_test = np.choose(oracle_selection, [nn_preds_test, lin_preds_test])
+    #     loss_oracle_test = rmse(oracle_prediction_test, y_test)
+    #     test_results[f'oracle_{p_lin}'] = loss_oracle_test
+    #     selection_results[f'oracle_{p_lin}'] = np.mean(oracle_selection)
 
     # -------------------------------- Threshold baseline
     for thresh in [0.5, 0.99, 1.5, 1.7]:
