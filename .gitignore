@@ -183,3 +183,4 @@ plots/*
 *.tex 
 explanations/*
 rocs/*
+test/

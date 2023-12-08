@@ -15,7 +15,7 @@ def get_explanations(model, X, y, background):
     explainer = DeepLiftShap(model)
     explanations = []
 
-    for i in tqdm.trange(len(X)):
+    for i in range(len(X)):
         explanations.append(explainer.attribute(X[i].reshape(1, -1), background, additional_forward_args=y[i].reshape(1, -1)).detach().cpu().numpy().reshape(1, -1))
 
     if len(explanations) == 0:
