@@ -79,7 +79,10 @@ def plot_selection_percentage(ds_name):
     df = pd.read_csv(f'results/{ds_name}_selection.csv')
     names = df.columns[1:]
     plt.figure()
-    plt.boxplot(df.iloc[:, 1:].to_numpy())
+    plt.violinplot(df.iloc[:, 1:].to_numpy(), showmedians=True)
+    #plt.boxplot(df.iloc[:, 1:].to_numpy())
+    epsilon = 0.05
+    plt.ylim(0-epsilon,1+epsilon)
     plt.xticks(ticks=np.arange(len(names))+1, labels=names.tolist(), rotation=90)
     plt.tight_layout()
     plt.savefig('test.png')

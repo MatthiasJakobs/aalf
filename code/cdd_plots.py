@@ -4,16 +4,10 @@ from critdd import Diagrams, Diagram
 from os import remove
 
 def create_cdd(ds_name, drop_columns=None):
-    df_val = pd.read_csv(f'results/{ds_name}_val.csv')
-    df_val = df_val.set_index('dataset_names')
     df_test = pd.read_csv(f'results/{ds_name}_test.csv')
     df_test = df_test.set_index('dataset_names')
 
     # Test if two columns are identical. Heuristically via col-sum
-    val_col_sum = df_val.sum(axis=0).to_numpy()
-    if len(np.unique(val_col_sum)) != len(val_col_sum):
-        print('At least two columns equal in val')
-        print(df_val)
     test_col_sum = df_test.sum(axis=0).to_numpy()
     if len(np.unique(test_col_sum)) != len(test_col_sum):
         print('At least two columns equal in test')

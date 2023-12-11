@@ -88,45 +88,6 @@ def compute_rocs(x, y, explanations, errors, threshold=0):
 def main():
     L = 10
 
-    '''
-    ### Australian electricity demands
-    X, horizons = load_monash('australian_electricity_demand', return_horizon=True)
-    X = X['series_value']
-    H = horizons[0]
-    log_val = []
-    log_test = []
-    for i, x in enumerate(X):
-        print('-'*30, i, '-'*30)
-        log_val, log_test = run_experiment(log_val, log_test, 'australian_electricity_demand', i, x, L, H, verbose=True)
-
-    log_val = pd.DataFrame(log_val)
-    log_val.index.rename('dataset_names', inplace=True)
-    log_val.to_csv('results/australian_electricity_demand_val.csv')
-    log_test = pd.DataFrame(log_test)
-    log_test.index.rename('dataset_names', inplace=True)
-    log_test.to_csv('results/australian_electricity_demand_test.csv')
-
-    create_cdd('australian_electricity_demand')
-
-    ### KDD Cup
-    X, horizons = load_monash('kdd_cup_nomissing', return_horizon=True)
-    X = X['series_value']
-    log_val = []
-    log_test = []
-    for i, x in enumerate(X):
-        print('-'*30, i, '-'*30)
-        log_val, log_test = run_experiment(log_val, log_test, 'kdd', i, x, L, horizons[i], verbose=True)
-
-    log_val = pd.DataFrame(log_val)
-    log_val.index.rename('dataset_names', inplace=True)
-    log_val.to_csv('results/kdd_val.csv')
-    log_test = pd.DataFrame(log_test)
-    log_test.index.rename('dataset_names', inplace=True)
-    log_test.to_csv('results/kdd_test.csv')
-
-    create_cdd('kdd')
-    '''
-
     ### weather
     X, horizons = load_monash('weather', return_horizon=True)
     X = X['series_value']
@@ -140,7 +101,6 @@ def main():
     run_size = 300
     indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
 
-    # indices = rng.choice(np.arange(len(X)), size=10, replace=False)
     # for i in indices:
     #     print('-'*30, i, '-'*30)
     #     log_val, log_test, log_selection = run_experiment('weather', i, X[i], L, horizons[i])
@@ -218,8 +178,6 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3):
 
     # Neural net
     try:
-        # with open(f'models/{ds_name}/{ds_index}/nn.pickle', 'rb') as f:
-        #     f_c = pickle.load(f)
         f_c = MedianPredictionEnsemble.load_model(ds_name, ds_index)
     except Exception:
         print(f'retrain nns for {ds_name}/{ds_index}')
@@ -227,8 +185,6 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3):
             f_c = MedianPredictionEnsemble([MLPRegressor((28,), learning_rate_init=lr, max_iter=500) for _ in range(10)])
             f_c.fit(x_train, y_train.squeeze())
             f_c.save_model(ds_name, ds_index)
-        # with open(f'models/{ds_name}/{ds_index}/nn.pickle', 'wb') as f:
-        #     pickle.dump(f_c, f)
 
     nn_preds_val = f_c.predict(x_val)
     nn_preds_test = f_c.predict(x_test)
@@ -237,19 +193,8 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3):
     val_results['nn'] = loss_nn_val
     test_results['nn'] = loss_nn_test
 
-    # Baselines
-    loss_lv_val = rmse(x_val[..., -1:], y_val)
-    loss_lv_test = rmse(x_test[..., -1:], y_test)
-    loss_mean_val = rmse(x_val.mean(axis=-1).reshape(-1, 1), y_val) 
-    loss_mean_test = rmse(x_test.mean(axis=-1).reshape(-1, 1), y_test) 
-    # val_results['lv'] = loss_lv_val
-    # test_results['lv'] = loss_lv_test
-    # val_results['mean'] = loss_mean_val
-    # test_results['mean'] = loss_mean_test
+    # -------------------------------- Model selection
 
-    #####################################
-    # Model selection
-    #####################################
     lin_preds_val = lin_preds_val.squeeze()
     lin_preds_test = lin_preds_test.squeeze()
     nn_preds_val = nn_preds_val.squeeze()
@@ -268,28 +213,8 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3):
     test_results['selOpt'] = loss_optimal_test
     selection_results['selOpt'] = np.mean(optimal_selection_test)
 
-    # for p_lin in [0.9, 0.95, 0.99]:
-    #     oracle_selection = selection_oracle_percent(y_test, lin_preds_test, nn_preds_test, p_lin)
-    #     oracle_prediction_test = np.choose(oracle_selection, [nn_preds_test, lin_preds_test])
-    #     loss_oracle_test = rmse(oracle_prediction_test, y_test)
-    #     test_results[f'oracle_{p_lin}'] = loss_oracle_test
-    #     selection_results[f'oracle_{p_lin}'] = np.mean(oracle_selection)
-
-    # -------------------------------- Threshold baseline
-    for thresh in [0.5, 0.99, 1.5, 1.7]:
-        thresh_selection_val = (lin_preds_val-nn_preds_val)**2 / (lin_preds_val**2 + nn_preds_val**2) <= thresh
-        thresh_selection_test = (lin_preds_test-nn_preds_test)**2 / (lin_preds_test**2 + nn_preds_test**2) <= thresh
-        # thresh_selection_val = (lin_preds_val-nn_preds_val)**2 <= thresh
-        # thresh_selection_test = (lin_preds_test-nn_preds_test)**2 <= thresh
-
-        thresh_prediction_val = np.choose(thresh_selection_val, [nn_preds_val, lin_preds_val])
-        thresh_prediction_test = np.choose(thresh_selection_test, [nn_preds_test, lin_preds_test])
-        loss_thresh_val = rmse(thresh_prediction_val, y_val)
-        loss_thresh_test = rmse(thresh_prediction_test, y_test)
-        # val_results[f'selThresh{thresh}'] = loss_thresh_val
-        # test_results[f'selThresh{thresh}'] = loss_thresh_test
-
     # -------------------------------- Binomial baseline
+
     rng = np.random.RandomState(934878167)
     repeats = 3
     
@@ -383,21 +308,38 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3):
             return val_results, test_results, selection_results
     else:
         ensemble_rocs = compute_rocs(x_val[ensemble_indices], y_val[ensemble_indices], ensemble_expl, ensemble_error[ensemble_indices])
-    
-    # makedirs(f'plots/{ds_name}', exist_ok=True)
-    # plot_rocs(lin_rocs, ensemble_rocs, f'plots/{ds_name}/{ds_index}.pdf')
 
     # ------------------ Run new selection methods
-    
-    # # v1
-    # name, test_selection = run_v1(x_test, lin_rocs, ensemble_rocs)
-    # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    # loss_test_test = rmse(test_prediction_test, y_test)
-    # test_results[name] = loss_test_test
-    # selection_results[name] = np.mean(test_selection)
 
-    # # v4
+    # Save train data for later
+    from selection import get_roc_dists
+    if len(lin_rocs) > 0 and len(ensemble_rocs) > 0:
+        lin_min_dist, ensemble_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
+        save_y = y_val
+        save_x = np.vstack([lin_preds_val, nn_preds_val, lin_min_dist, ensemble_min_dist]).T
+
+        lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
+
+        makedirs(f'data/optim_{ds_name}/{ds_index}', exist_ok=True)
+        np.save(f'data/optim_{ds_name}/{ds_index}/train_X.npy', save_x)
+        np.save(f'data/optim_{ds_name}/{ds_index}/train_y.npy', save_y)
+        np.save(f'data/optim_{ds_name}/{ds_index}/test_X.npy', np.vstack([lin_preds_test, nn_preds_test, lin_min_dist, ensemble_min_dist]).T)
+        np.save(f'data/optim_{ds_name}/{ds_index}/test_y.npy', y_test)
+
+    # v4
     name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
+    selection_results[name] = np.mean(test_selection)
+
+    name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, thresh=0.4, random_state=20231116+ds_index)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
+    selection_results[name] = np.mean(test_selection)
+
+    name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, thresh=0.3, random_state=20231116+ds_index)
     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
     loss_test_test = rmse(test_prediction_test, y_test)
     test_results[name] = loss_test_test
@@ -409,48 +351,20 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3):
     test_results[name] = loss_test_test
     selection_results[name] = np.mean(test_selection)
 
-    # makedirs(f'test/{ds_name}/{ds_index}', exist_ok=True)
-    # basepath = f'test/{ds_name}/{ds_index}'
-    # from os.path import join
-    # np.save(join(basepath, 'x_val.npy'), x_val)
-    # np.save(join(basepath, 'y_val.npy'), y_val)
-    # np.save(join(basepath, 'x_test.npy'), x_test)
-    # np.save(join(basepath, 'y_test.npy'), y_test)
-    # np.save(join(basepath, 'lin_preds_val.npy'), lin_preds_val)
-    # np.save(join(basepath, 'nn_preds_val.npy'), nn_preds_val)
-    # np.save(join(basepath, 'lin_preds_test.npy'), lin_preds_test)
-    # np.save(join(basepath, 'nn_preds_test.npy'), nn_preds_test)
-    # with open(join(basepath, 'lin_rocs.pickle'), 'wb+') as f:
-    #     pickle.dump(lin_rocs, f)
-    # with open(join(basepath, 'ensemble_rocs.pickle'), 'wb+') as f:
-    #     pickle.dump(ensemble_rocs, f)
+    # ------------------ Baseline to check if v4 is actually better
+    name = 'selBinomOptP'
+    p_optimal_sel = np.mean(optimal_selection_val)
+    sel_rng = np.random.RandomState(20231208)
+    test_prediction_test = np.zeros((len(y_test)))
+    n_runs = 10
+    loss_test_test = 0
+    for _ in range(n_runs):
+        test_selection = sel_rng.binomial(1, p_optimal_sel, size=len(y_test))
+        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+        loss_test_test += rmse(test_prediction_test, y_test)
 
-    # return test_results, val_results, selection_results
-
-    # v5
-    # name, test_selection = run_v5(x_val, y_val, x_test, y_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, p=0.99)
-    # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    # loss_test_test = rmse(test_prediction_test, y_test)
-    # test_results[name] = loss_test_test
-    # selection_results[name] = np.mean(test_selection)
-
-    # name, test_selection = run_v5(x_val, y_val, x_test, y_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, p=0.95)
-    # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    # loss_test_test = rmse(test_prediction_test, y_test)
-    # test_results[name] = loss_test_test
-    # selection_results[name] = np.mean(test_selection)
-
-    # name, test_selection = run_v5(x_val, y_val, x_test, y_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, p=0.90)
-    # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    # loss_test_test = rmse(test_prediction_test, y_test)
-    # test_results[name] = loss_test_test
-    # selection_results[name] = np.mean(test_selection)
-
-    # name, test_selection = run_v6(x_test, lin_rocs, ensemble_rocs)
-    # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    # loss_test_test = rmse(test_prediction_test, y_test)
-    # test_results[name] = loss_test_test
-    # selection_results[name] = np.mean(test_selection)
+    loss_test_test /= n_runs
+    test_results[name] = loss_test_test
 
     return val_results, test_results, selection_results
 

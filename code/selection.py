@@ -99,11 +99,13 @@ def run_v3(x_test, lin_rocs, ensemble_rocs, thresh):
     return name, test_selection
 
 # Train classifier based on RoC distances and optimal validation selection
-def run_v4(val_selection, x_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, calibrate=False):
+def run_v4(val_selection, x_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, calibrate=False, thresh=0.5, use_rocs=True):
     if calibrate:
-        name = f'v4_calibrated'
+        name = f'v4_{thresh}_calibrated'
     else:
-        name = f'v4'
+        name = f'v4_{thresh}'
+    if not use_rocs:
+        name = name + '_norocs'
     # What to do if empty rocs
     if len(ensemble_rocs) == 0:
         # Choose linear
@@ -114,32 +116,37 @@ def run_v4(val_selection, x_val, x_test, lin_val_preds, ens_val_preds, lin_test_
 
     lin_min_dist, ensemble_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
 
-    X_train = np.vstack([lin_val_preds, ens_val_preds, lin_min_dist, ensemble_min_dist]).T
-    X_train = np.concatenate([X_train, x_val], axis=1)
+    if use_rocs:
+        X_train = np.vstack([lin_val_preds, ens_val_preds, lin_min_dist, ensemble_min_dist]).T
+    else:
+        X_train = np.vstack([lin_val_preds, ens_val_preds]).T
+    #X_train = np.concatenate([X_train, x_val], axis=1)
     y_train = val_selection
 
     clf = RandomForestClassifier(random_state=random_state)
     clf.fit(X_train, y_train)
 
     lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
-    X_test = np.vstack([lin_test_preds, ens_test_preds, lin_min_dist, ensemble_min_dist]).T
-    X_test = np.concatenate([X_test, x_test], axis=1)
+    if use_rocs:
+        X_test = np.vstack([lin_test_preds, ens_test_preds, lin_min_dist, ensemble_min_dist]).T
+    else:
+        X_test = np.vstack([lin_test_preds, ens_test_preds]).T
+    #X_test = np.concatenate([X_test, x_test], axis=1)
 
     # Very simple calibration 
-    best_thresh = 0.5
+    best_thresh = thresh
     if calibrate:
         n_calib = 15
         fn_train = len(y_train) - np.sum(clf.predict(X_train)[y_train == 1])
         thresholds = np.arange(n_calib)[1:] / (2*n_calib)
-        for thresh in thresholds:
-            new_fn = len(y_train) - np.sum((clf.predict_proba(X_train)[:, 1] >= thresh)[y_train == 1])
+        for _thresh in thresholds[::-1]:
+            new_fn = len(y_train) - np.sum((clf.predict_proba(X_train)[:, 1] > _thresh)[y_train == 1])
             if new_fn < fn_train:
                 fn_train = new_fn
-                best_thresh = thresh
-
-        #print('best thresh', best_thresh)
-
-    return name, (clf.predict_proba(X_test)[:, 1] >= best_thresh).astype(np.int8)
+                best_thresh = _thresh
+        # #print('best thresh', best_thresh, min(thresholds), max(thresholds))
+    
+    return name, (clf.predict_proba(X_test)[:, 1] > best_thresh).astype(np.int8)
 
 # Train on biggest errors in validation set
 def run_v5(x_val, y_val, x_test, y_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, p=0.99, calibrate=False):
