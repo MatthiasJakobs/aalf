@@ -88,6 +88,102 @@ def compute_rocs(x, y, explanations, errors, threshold=0):
 def main():
     L = 10
 
+    ### london
+    ds_name = 'london_smart_meters_nomissing'
+    X, horizons = load_monash(ds_name, return_horizon=True)
+    X = X['series_value']
+    log_val = []
+    log_test = []
+    log_selection = []
+
+    # Choose subset
+    rng = np.random.RandomState(12389182)
+    run_size = len(X)
+    #run_size = int(len(X)*0.1)
+    indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
+
+    print(ds_name, 'n_series', len(X))
+    # for i in indices:
+    #     print('-'*30, i, '-'*30)
+    #     log_val, log_test, log_selection = run_experiment(ds_name, i, X[i], L, 1)
+    # exit()
+
+    log_val, log_test, log_selection = zip(*Parallel(n_jobs=-1, backend="loky")(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, 1) for ds_index in tqdm.tqdm(indices)))
+    log_val = pd.DataFrame(list(log_val))
+    log_val.index.rename('dataset_names', inplace=True)
+    log_val.to_csv(f'results/{ds_name}_val.csv')
+    log_test = pd.DataFrame(list(log_test))
+    log_test.index.rename('dataset_names', inplace=True)
+    log_test.to_csv(f'results/{ds_name}_test.csv')
+    log_selection = pd.DataFrame(list(log_selection))
+    log_selection.index.rename('dataset_names', inplace=True)
+    log_selection.to_csv(f'results/{ds_name}_selection.csv')
+    create_cdd(ds_name)
+    exit()
+
+    ### pedestrian counts
+    ds_name = 'pedestrian_counts'
+    X, horizons = load_monash(ds_name, return_horizon=True)
+    X = X['series_value']
+    log_val = []
+    log_test = []
+    log_selection = []
+
+    # Choose subset
+    rng = np.random.RandomState(12389182)
+    run_size = len(X)
+    #run_size = int(len(X)*0.2)
+    indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
+
+    print(ds_name, 'n_series', len(X))
+    # for i in indices:
+    #     print('-'*30, i, '-'*30)
+    #     log_val, log_test, log_selection = run_experiment(ds_name, i, X[i], L, 1)
+    # exit()
+
+    log_val, log_test, log_selection = zip(*Parallel(n_jobs=-1, backend="loky")(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, 1) for ds_index in tqdm.tqdm(indices)))
+    log_val = pd.DataFrame(list(log_val))
+    log_val.index.rename('dataset_names', inplace=True)
+    log_val.to_csv(f'results/{ds_name}_val.csv')
+    log_test = pd.DataFrame(list(log_test))
+    log_test.index.rename('dataset_names', inplace=True)
+    log_test.to_csv(f'results/{ds_name}_test.csv')
+    log_selection = pd.DataFrame(list(log_selection))
+    log_selection.index.rename('dataset_names', inplace=True)
+    log_selection.to_csv(f'results/{ds_name}_selection.csv')
+    create_cdd(ds_name)
+
+    ### KDD CUP
+    X, horizons = load_monash('kdd_cup_nomissing', return_horizon=True)
+    X = X['series_value']
+    log_val = []
+    log_test = []
+    log_selection = []
+
+    # Choose subset
+    rng = np.random.RandomState(12389182)
+    run_size = len(X)
+    #run_size = int(len(X)*0.2)
+    indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
+
+    # for i in indices:
+    #     print('-'*30, i, '-'*30)
+    #     log_val, log_test, log_selection = run_experiment('kdd_cup_nomissing', i, X[i], L, 1)
+    # exit()
+
+    print('kdd_cup_nomissing', 'n_series', len(X))
+    log_val, log_test, log_selection = zip(*Parallel(n_jobs=-1, backend="loky")(delayed(run_experiment)('kdd_cup_nomissing', ds_index, X[ds_index], L, 1) for ds_index in tqdm.tqdm(indices)))
+    log_val = pd.DataFrame(list(log_val))
+    log_val.index.rename('dataset_names', inplace=True)
+    log_val.to_csv('results/kdd_cup_nomissing_val.csv')
+    log_test = pd.DataFrame(list(log_test))
+    log_test.index.rename('dataset_names', inplace=True)
+    log_test.to_csv('results/kdd_cup_nomissing_test.csv')
+    log_selection = pd.DataFrame(list(log_selection))
+    log_selection.index.rename('dataset_names', inplace=True)
+    log_selection.to_csv('results/kdd_cup_nomissing_selection.csv')
+    create_cdd('kdd_cup_nomissing')
+
     ### weather
     X, horizons = load_monash('weather', return_horizon=True)
     X = X['series_value']
@@ -106,6 +202,7 @@ def main():
     #     log_val, log_test, log_selection = run_experiment('weather', i, X[i], L, horizons[i])
     # exit()
 
+    print('weather', 'n_series', len(X))
     log_val, log_test, log_selection = zip(*Parallel(n_jobs=-1, backend="loky")(delayed(run_experiment)('weather', ds_index, X[ds_index], L, horizons[ds_index]) for ds_index in tqdm.tqdm(indices)))
 
     log_val = pd.DataFrame(list(log_val))
@@ -120,7 +217,7 @@ def main():
 
     create_cdd('weather')
 
-def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3):
+def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     #print(ds_index)
     makedirs(f'models/{ds_name}/{ds_index}', exist_ok=True)
 
@@ -144,6 +241,12 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3):
     x_train, y_train = windowing(X_train, L=L, H=H)
     x_val, y_val = windowing(X_val, L=L, H=H)
     x_test, y_test = windowing(X_test, L=L, H=H)
+    if len(y_train.shape) == 1:
+        y_train = y_train.reshape(-1, 1)
+    if len(y_val.shape) == 1:
+        y_val = y_val.reshape(-1, 1)
+    if len(y_test.shape) == 1:
+        y_test = y_test.reshape(-1, 1)
     y_train = y_train[..., -1:]
     y_val = y_val[..., -1:]
     y_test = y_test[..., -1:]
@@ -182,7 +285,7 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3):
     except Exception:
         print(f'retrain nns for {ds_name}/{ds_index}')
         with fixedseed(np, 20231103):
-            f_c = MedianPredictionEnsemble([MLPRegressor((28,), learning_rate_init=lr, max_iter=500) for _ in range(10)])
+            f_c = MedianPredictionEnsemble([MLPRegressor((28,), learning_rate_init=lr, max_iter=max_iter_nn) for _ in range(10)])
             f_c.fit(x_train, y_train.squeeze())
             f_c.save_model(ds_name, ds_index)
 
@@ -236,6 +339,8 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3):
         val_results[f'selBinom{p}'] = loss_binom_val
         test_results[f'selBinom{p}'] = loss_binom_test
         selection_results[f'selBinom{p}'] = np.mean(binom_selection_test)
+
+    return val_results, test_results, selection_results
 
     # -------------------------------- RoC based methods
 
