@@ -340,7 +340,7 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
         test_results[f'selBinom{p}'] = loss_binom_test
         selection_results[f'selBinom{p}'] = np.mean(binom_selection_test)
 
-    return val_results, test_results, selection_results
+    #return val_results, test_results, selection_results
 
     # -------------------------------- RoC based methods
 
@@ -433,18 +433,6 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
 
     # v4
     name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index)
-    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    loss_test_test = rmse(test_prediction_test, y_test)
-    test_results[name] = loss_test_test
-    selection_results[name] = np.mean(test_selection)
-
-    name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, thresh=0.4, random_state=20231116+ds_index)
-    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    loss_test_test = rmse(test_prediction_test, y_test)
-    test_results[name] = loss_test_test
-    selection_results[name] = np.mean(test_selection)
-
-    name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, thresh=0.3, random_state=20231116+ds_index)
     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
     loss_test_test = rmse(test_prediction_test, y_test)
     test_results[name] = loss_test_test

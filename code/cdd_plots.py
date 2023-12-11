@@ -4,8 +4,8 @@ from critdd import Diagrams, Diagram
 from os import remove
 
 TREATMENT_DICT = {
-    'linear': '$f_i$',
-    'nn': '$f_c$',
+    'linear': 'Linear',
+    'nn': 'Neural Network',
     'selOpt': 'Optimal selection',
 }
 
@@ -153,6 +153,9 @@ def create_all_cdd(drop_columns=None):
 
         Xs.append(df_test.to_numpy())
 
+    treatment_names = [TREATMENT_DICT.get(key,key) for key in treatment_names.to_list()]
+    ds_names = [DATASET_DICT.get(key,key) for key in ds_names]
+
     for x in Xs:
         print(x.shape)
     print(treatment_names)
@@ -164,7 +167,7 @@ def create_all_cdd(drop_columns=None):
     )
 
     diagram.to_file(
-        f"all.pdf",
+        f"all_datasets.pdf",
         preamble = "\n".join([ # colors are defined before \begin{document}
             "\\definecolor{color1}{HTML}{000000}",
             "\\definecolor{color2}{HTML}{00FF00}",
@@ -257,8 +260,8 @@ def create_all_cdd(drop_columns=None):
     )
 
     # Cleanup temp files
-    remove(f'all.aux')
-    remove(f'all.log')
+    remove(f'all_datasets.aux')
+    remove(f'all_datasets.log')
 
 def main():
     #create_cdd('weather', ['v1'])

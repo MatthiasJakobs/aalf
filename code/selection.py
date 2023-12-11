@@ -99,13 +99,13 @@ def run_v3(x_test, lin_rocs, ensemble_rocs, thresh):
     return name, test_selection
 
 # Train classifier based on RoC distances and optimal validation selection
-def run_v4(val_selection, x_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, calibrate=False, thresh=0.5, use_rocs=True):
+def run_v4(val_selection, x_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, calibrate=False, thresh=0.5, use_diff=False):
     if calibrate:
         name = f'v4_{thresh}_calibrated'
     else:
         name = f'v4_{thresh}'
-    if not use_rocs:
-        name = name + '_norocs'
+    if use_diff:
+        name = name + '_diff'
     # What to do if empty rocs
     if len(ensemble_rocs) == 0:
         # Choose linear
@@ -116,10 +116,9 @@ def run_v4(val_selection, x_val, x_test, lin_val_preds, ens_val_preds, lin_test_
 
     lin_min_dist, ensemble_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
 
-    if use_rocs:
-        X_train = np.vstack([lin_val_preds, ens_val_preds, lin_min_dist, ensemble_min_dist]).T
-    else:
-        X_train = np.vstack([lin_val_preds, ens_val_preds]).T
+    X_train = np.vstack([lin_val_preds, ens_val_preds, lin_min_dist, ensemble_min_dist]).T
+    if use_diff:
+        X_train = np.vstack([lin_val_preds-ens_val_preds, lin_min_dist-ensemble_min_dist]).T
     #X_train = np.concatenate([X_train, x_val], axis=1)
     y_train = val_selection
 
@@ -127,10 +126,9 @@ def run_v4(val_selection, x_val, x_test, lin_val_preds, ens_val_preds, lin_test_
     clf.fit(X_train, y_train)
 
     lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
-    if use_rocs:
-        X_test = np.vstack([lin_test_preds, ens_test_preds, lin_min_dist, ensemble_min_dist]).T
-    else:
-        X_test = np.vstack([lin_test_preds, ens_test_preds]).T
+    X_test = np.vstack([lin_test_preds, ens_test_preds, lin_min_dist, ensemble_min_dist]).T
+    if use_diff:
+        X_test = np.vstack([lin_test_preds-ens_test_preds, lin_min_dist-ensemble_min_dist]).T
     #X_test = np.concatenate([X_test, x_test], axis=1)
 
     # Very simple calibration 
