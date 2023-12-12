@@ -88,134 +88,40 @@ def compute_rocs(x, y, explanations, errors, threshold=0):
 def main():
     L = 10
 
-    ### london
-    ds_name = 'london_smart_meters_nomissing'
-    X, horizons = load_monash(ds_name, return_horizon=True)
-    X = X['series_value']
-    log_val = []
-    log_test = []
-    log_selection = []
+    #ds_names = ['kdd_cup_nomissing', 'pedestrian_counts', 'weather']
+    ds_names = ['london_smart_meters_nomissing', 'kdd_cup_nomissing', 'pedestrian_counts', 'weather']
 
-    # Choose subset
-    rng = np.random.RandomState(12389182)
-    run_size = len(X)
-    #run_size = int(len(X)*0.1)
-    indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
+    for ds_name in ds_names:
+        X, horizons = load_monash(ds_name, return_horizon=True)
+        X = X['series_value']
+        log_test = []
+        log_selection = []
 
-    print(ds_name, 'n_series', len(X))
-    # for i in indices:
-    #     print('-'*30, i, '-'*30)
-    #     log_val, log_test, log_selection = run_experiment(ds_name, i, X[i], L, 1)
-    # exit()
+        # Choose subset
+        rng = np.random.RandomState(12389182)
+        run_size = len(X)
+        #run_size = int(len(X)*0.1)
+        indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
+        if ds_name == 'london_smart_meters_nomissing':
+            indices = [idx for idx in indices if idx != 5531]
 
-    log_val, log_test, log_selection = zip(*Parallel(n_jobs=-1, backend="loky")(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, 1) for ds_index in tqdm.tqdm(indices)))
-    log_val = pd.DataFrame(list(log_val))
-    log_val.index.rename('dataset_names', inplace=True)
-    log_val.to_csv(f'results/{ds_name}_val.csv')
-    log_test = pd.DataFrame(list(log_test))
-    log_test.index.rename('dataset_names', inplace=True)
-    log_test.to_csv(f'results/{ds_name}_test.csv')
-    log_selection = pd.DataFrame(list(log_selection))
-    log_selection.index.rename('dataset_names', inplace=True)
-    log_selection.to_csv(f'results/{ds_name}_selection.csv')
-    create_cdd(ds_name)
-    exit()
+        if ds_name != 'weather':
+            horizons = np.ones((len(X))).astype(np.int8)
 
-    ### pedestrian counts
-    ds_name = 'pedestrian_counts'
-    X, horizons = load_monash(ds_name, return_horizon=True)
-    X = X['series_value']
-    log_val = []
-    log_test = []
-    log_selection = []
+        print(ds_name, 'n_series', len(X))
+        # for i in indices:
+        #     print('-'*30, i, '-'*30)
+        #     log_test, log_selection = run_experiment(ds_name, i, X[i], L, horizons[i])
+        # exit()
 
-    # Choose subset
-    rng = np.random.RandomState(12389182)
-    run_size = len(X)
-    #run_size = int(len(X)*0.2)
-    indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
-
-    print(ds_name, 'n_series', len(X))
-    # for i in indices:
-    #     print('-'*30, i, '-'*30)
-    #     log_val, log_test, log_selection = run_experiment(ds_name, i, X[i], L, 1)
-    # exit()
-
-    log_val, log_test, log_selection = zip(*Parallel(n_jobs=-1, backend="loky")(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, 1) for ds_index in tqdm.tqdm(indices)))
-    log_val = pd.DataFrame(list(log_val))
-    log_val.index.rename('dataset_names', inplace=True)
-    log_val.to_csv(f'results/{ds_name}_val.csv')
-    log_test = pd.DataFrame(list(log_test))
-    log_test.index.rename('dataset_names', inplace=True)
-    log_test.to_csv(f'results/{ds_name}_test.csv')
-    log_selection = pd.DataFrame(list(log_selection))
-    log_selection.index.rename('dataset_names', inplace=True)
-    log_selection.to_csv(f'results/{ds_name}_selection.csv')
-    create_cdd(ds_name)
-
-    ### KDD CUP
-    X, horizons = load_monash('kdd_cup_nomissing', return_horizon=True)
-    X = X['series_value']
-    log_val = []
-    log_test = []
-    log_selection = []
-
-    # Choose subset
-    rng = np.random.RandomState(12389182)
-    run_size = len(X)
-    #run_size = int(len(X)*0.2)
-    indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
-
-    # for i in indices:
-    #     print('-'*30, i, '-'*30)
-    #     log_val, log_test, log_selection = run_experiment('kdd_cup_nomissing', i, X[i], L, 1)
-    # exit()
-
-    print('kdd_cup_nomissing', 'n_series', len(X))
-    log_val, log_test, log_selection = zip(*Parallel(n_jobs=-1, backend="loky")(delayed(run_experiment)('kdd_cup_nomissing', ds_index, X[ds_index], L, 1) for ds_index in tqdm.tqdm(indices)))
-    log_val = pd.DataFrame(list(log_val))
-    log_val.index.rename('dataset_names', inplace=True)
-    log_val.to_csv('results/kdd_cup_nomissing_val.csv')
-    log_test = pd.DataFrame(list(log_test))
-    log_test.index.rename('dataset_names', inplace=True)
-    log_test.to_csv('results/kdd_cup_nomissing_test.csv')
-    log_selection = pd.DataFrame(list(log_selection))
-    log_selection.index.rename('dataset_names', inplace=True)
-    log_selection.to_csv('results/kdd_cup_nomissing_selection.csv')
-    create_cdd('kdd_cup_nomissing')
-
-    ### weather
-    X, horizons = load_monash('weather', return_horizon=True)
-    X = X['series_value']
-    log_val = []
-    log_test = []
-    log_selection = []
-
-    # Choose subset
-    rng = np.random.RandomState(12389182)
-    #run_size = len(X)
-    run_size = 300
-    indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
-
-    # for i in indices:
-    #     print('-'*30, i, '-'*30)
-    #     log_val, log_test, log_selection = run_experiment('weather', i, X[i], L, horizons[i])
-    # exit()
-
-    print('weather', 'n_series', len(X))
-    log_val, log_test, log_selection = zip(*Parallel(n_jobs=-1, backend="loky")(delayed(run_experiment)('weather', ds_index, X[ds_index], L, horizons[ds_index]) for ds_index in tqdm.tqdm(indices)))
-
-    log_val = pd.DataFrame(list(log_val))
-    log_val.index.rename('dataset_names', inplace=True)
-    log_val.to_csv('results/weather_val.csv')
-    log_test = pd.DataFrame(list(log_test))
-    log_test.index.rename('dataset_names', inplace=True)
-    log_test.to_csv('results/weather_test.csv')
-    log_selection = pd.DataFrame(list(log_selection))
-    log_selection.index.rename('dataset_names', inplace=True)
-    log_selection.to_csv('results/weather_selection.csv')
-
-    create_cdd('weather')
+        log_test, log_selection = zip(*Parallel(n_jobs=-1, backend="loky")(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, horizons[ds_index]) for ds_index in tqdm.tqdm(indices)))
+        log_test = pd.DataFrame(list(log_test))
+        log_test.index.rename('dataset_names', inplace=True)
+        log_test.to_csv(f'results/{ds_name}_test.csv')
+        log_selection = pd.DataFrame(list(log_selection))
+        log_selection.index.rename('dataset_names', inplace=True)
+        log_selection.to_csv(f'results/{ds_name}_selection.csv')
+        create_cdd(ds_name)
 
 def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     #print(ds_index)
@@ -258,7 +164,6 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     y_val = y_val.astype(np.float32)
     y_test = y_test.astype(np.float32)
 
-    val_results = {}
     test_results = {}
     selection_results = {}
 
@@ -276,7 +181,6 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     lin_preds_test = f_i.predict(x_test)
     loss_i_val = rmse(lin_preds_val, y_val)
     loss_i_test = rmse(lin_preds_test, y_test)
-    val_results['linear'] = loss_i_val
     test_results['linear'] = loss_i_test
 
     # Neural net
@@ -293,7 +197,6 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     nn_preds_test = f_c.predict(x_test)
     loss_nn_val = rmse(nn_preds_val, y_val)
     loss_nn_test = rmse(nn_preds_test, y_test)
-    val_results['nn'] = loss_nn_val
     test_results['nn'] = loss_nn_test
 
     # -------------------------------- Model selection
@@ -312,7 +215,6 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     optimal_prediction_test = np.choose(optimal_selection_test, [nn_preds_test, lin_preds_test])
     loss_optimal_val = rmse(optimal_prediction_val, y_val)
     loss_optimal_test = rmse(optimal_prediction_test, y_test)
-    val_results['selOpt'] = loss_optimal_val
     test_results['selOpt'] = loss_optimal_test
     selection_results['selOpt'] = np.mean(optimal_selection_test)
 
@@ -336,11 +238,10 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
         loss_binom_val /= repeats
         loss_binom_test /= repeats
 
-        val_results[f'selBinom{p}'] = loss_binom_val
         test_results[f'selBinom{p}'] = loss_binom_test
         selection_results[f'selBinom{p}'] = np.mean(binom_selection_test)
 
-    #return val_results, test_results, selection_results
+    #return test_results, selection_results
 
     # -------------------------------- RoC based methods
 
@@ -401,7 +302,7 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
             lin_rocs = []
         else:
             print('redo', ds_index, x_val[lin_indices].shape, lin_expl.shape)
-            return val_results, test_results, selection_results
+            return test_results, selection_results
     else:
         lin_rocs = compute_rocs(x_val[lin_indices], y_val[lin_indices], lin_expl, lin_error[lin_indices])
 
@@ -410,7 +311,7 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
             ensemble_rocs = []
         else:
             print('redo', ds_index, x_val[ensemble_indices].shape, ensemble_expl.shape)
-            return val_results, test_results, selection_results
+            return test_results, selection_results
     else:
         ensemble_rocs = compute_rocs(x_val[ensemble_indices], y_val[ensemble_indices], ensemble_expl, ensemble_error[ensemble_indices])
 
@@ -459,7 +360,7 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     loss_test_test /= n_runs
     test_results[name] = loss_test_test
 
-    return val_results, test_results, selection_results
+    return test_results, selection_results
 
 
 if __name__ == '__main__':
