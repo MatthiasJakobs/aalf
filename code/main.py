@@ -88,8 +88,8 @@ def compute_rocs(x, y, explanations, errors, threshold=0):
 def main():
     L = 10
 
-    #ds_names = ['kdd_cup_nomissing', 'pedestrian_counts', 'weather']
-    ds_names = ['london_smart_meters_nomissing', 'kdd_cup_nomissing', 'pedestrian_counts', 'weather']
+    #ds_names = ['london_smart_meters_nomissing', 'kdd_cup_nomissing', 'pedestrian_counts', 'weather']
+    ds_names = ['london_smart_meters_nomissing']
 
     for ds_name in ds_names:
         X, horizons = load_monash(ds_name, return_horizon=True)
@@ -100,28 +100,38 @@ def main():
         # Choose subset
         rng = np.random.RandomState(12389182)
         run_size = len(X)
-        #run_size = int(len(X)*0.1)
+        #run_size = int(len(X)*0.2)
         indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
+        
+        # Remove datapoints that contain NaNs after preprocessing (for example, if all values are the same)
         if ds_name == 'london_smart_meters_nomissing':
             indices = [idx for idx in indices if idx != 5531]
 
-        if ds_name != 'weather':
+        if ds_name != 'weather' :
             horizons = np.ones((len(X))).astype(np.int8)
 
-        print(ds_name, 'n_series', len(X))
+        lr = 1e-3
+        max_epochs = 500
+
+        print(ds_name, 'n_series', len(indices))
         # for i in indices:
         #     print('-'*30, i, '-'*30)
-        #     log_test, log_selection = run_experiment(ds_name, i, X[i], L, horizons[i])
+        #     log_test, log_selection = run_experiment(ds_name, i, X[i], L, horizons[i], max_iter_nn=max_epochs)
         # exit()
 
-        log_test, log_selection = zip(*Parallel(n_jobs=-1, backend="loky")(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, horizons[ds_index]) for ds_index in tqdm.tqdm(indices)))
+        # for i in [1112, 1952, 2265]:
+        #     print('-'*30, i, '-'*30)
+        #     log_test, log_selection = run_experiment(ds_name, i, X[i], L, horizons[i], max_iter_nn=max_epochs)
+        # exit()
+
+        log_test, log_selection = zip(*Parallel(n_jobs=-1, backend="loky")(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, horizons[ds_index], lr=lr, max_iter_nn=max_epochs) for ds_index in tqdm.tqdm(indices)))
         log_test = pd.DataFrame(list(log_test))
         log_test.index.rename('dataset_names', inplace=True)
         log_test.to_csv(f'results/{ds_name}_test.csv')
         log_selection = pd.DataFrame(list(log_selection))
         log_selection.index.rename('dataset_names', inplace=True)
         log_selection.to_csv(f'results/{ds_name}_selection.csv')
-        create_cdd(ds_name)
+        #create_cdd(ds_name)
 
 def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     #print(ds_index)
@@ -273,22 +283,6 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
         pt_yval_ens = torch.from_numpy(y_val[ensemble_indices])
 
         pt_background = torch.from_numpy(background)
-        if torch.cuda.is_available():
-            before = time.time()
-            pt_xval_lin = pt_xval_lin.to('cuda')
-            pt_xval_ens = pt_xval_ens.to('cuda')
-            pt_yval_lin = pt_yval_lin.to('cuda')
-            pt_yval_ens = pt_yval_ens.to('cuda')
-            pt_background = pt_background.to('cuda')
-            
-            for estimator in pt_ensemble.ensemble:
-                estimator.to('cuda')
-
-            pt_linear.lin.to('cuda')
-            after = time.time()
-            print('x', pt_xval_lin.shape, pt_xval_ens.shape, 'y', pt_yval_lin.shape, pt_yval_ens.shape, 'bg', pt_background.shape)
-            print('copying took', after-before, 'seconds')
-
 
         with fixedseed([torch, np], seed=(20231110+ds_index)):
             lin_expl = get_explanations(pt_linear, pt_xval_lin, pt_yval_lin, pt_background)
