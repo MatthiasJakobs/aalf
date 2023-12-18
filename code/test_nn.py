@@ -35,12 +35,13 @@ class Net(nn.Module):
             return (self.forward(x) > 0.5).int().squeeze().numpy()
 
 
-def train(model, device, train_loader, optimizer, _lambda):
+def train(epoch, model, device, train_loader, optimizer, _lambda):
     model.train()
     epoch_total_loss = 0
     epoch_prediction_loss = 0
     epoch_constrained_loss = 0
-    for (X, y) in tqdm.tqdm(train_loader):
+    for (X, y) in (tbar := tqdm.tqdm(train_loader)):
+        tbar.set_description(f'epoch {epoch} train')
         X, y = X.to(device), y.to(device)
 
         # Individual predictions
@@ -66,12 +67,13 @@ def train(model, device, train_loader, optimizer, _lambda):
     return epoch_total_loss, epoch_prediction_loss, epoch_constrained_loss
 
 
-def test(model, device, test_loader, _lambda):
+def test(epoch, model, device, test_loader, _lambda):
     model.eval()
     percentage_ones = 0
     total_loss = 0
     with torch.no_grad():
-        for batch_idx, (X, y) in enumerate(test_loader):
+        for (X, y) in (tbar := tqdm.tqdm(test_loader)):
+            tbar.set_description(f'epoch {epoch} val')
             X, y = X.to(device), y.to(device)
 
             # Individual predictions
@@ -94,7 +96,6 @@ def test(model, device, test_loader, _lambda):
 def global_model():
 
     device = get_device()
-    #device = 'cpu'
     print(device)
 
     rng = np.random.RandomState(92848372)
@@ -126,7 +127,7 @@ def global_model():
     print('Val size', len(val_ds))
     batch_size = 2048
     train_dl = DataLoader(train_ds, batch_size=batch_size)
-    val_dl = DataLoader(train_ds, batch_size=batch_size)
+    val_dl = DataLoader(val_ds, batch_size=batch_size)
 
     n_epochs = 70
     with fixedseed(torch, 102391):
@@ -135,11 +136,12 @@ def global_model():
         _lambda = 0.01
 
         for epoch in range(n_epochs):
-            total_loss, prediction_loss, constrained_loss = train(model, device, train_dl, optimizer, _lambda)
-            val_loss, val_percent_ones = test(model, device, val_dl, _lambda)
+            total_loss, prediction_loss, constrained_loss = train(epoch, model, device, train_dl, optimizer, _lambda)
+            val_loss, val_percent_ones = test(epoch, model, device, val_dl, _lambda)
             # if (epoch+1) % 10 == 0:
             #     print(epoch, total_loss, prediction_loss, constrained_loss, '|', val_loss, val_percent_ones)
             print(epoch, total_loss, prediction_loss, constrained_loss, '|', val_loss, val_percent_ones)
+            torch.save(model.state_dict(), 'model.net')
 
     exit()
 
