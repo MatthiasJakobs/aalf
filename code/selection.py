@@ -225,21 +225,23 @@ def run_v6(x_test, lin_rocs, nn_rocs):
     return name, np.array(selection).astype(np.int8)
 
 # optimize p_t based on formula with neural network
-def run_v7(x_val, x_test, lin_rocs, lin_val_preds, ensemble_rocs, ensemble_val_preds):
-    ### Construct meta dataset
-    # Distance to closest RoC member
-    lin_min_dist, ensemble_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
+def run_v7(x_test, lin_rocs, ensemble_rocs, lin_test_preds, ensemble_test_preds):
+    name = 'v7'
 
-    # Expected losses based on saved RoC member
-    lin_min_dist_indices = np.argmin(np.vstack([lin_roc.euclidean_distance(x_val) for lin_roc in lin_rocs]), axis=0)
-    ensemble_min_dist_indices = np.argmin(np.vstack([ensemble_roc.euclidean_distance(x_val) for ensemble_roc in ensemble_rocs]), axis=0)
-    se_lin = [lin_rocs[_idx] for _idx in lin_min_dist_indices]
-    se_ens = [ensemble_rocs[_idx] for _idx in ensemble_min_dist_indices]
-    lin_closest_roc_losses = np.array([roc.squared_error for roc in se_lin])
-    nn_closest_roc_losses = np.array([roc.squared_error for roc in se_ens])
+    # What to do if empty rocs
+    if len(ensemble_rocs) == 0:
+        # Choose linear
+        return name, np.ones((len(x_test))).astype(np.int8)
+    if len(lin_rocs) == 0:
+        # Choose complex
+        return name, np.zeros((len(x_test))).astype(np.int8)
 
-    X_train = np.vstack([lin_min_dist / ensemble_min_dist, lin_closest_roc_losses / nn_closest_roc_losses, ]).T
-    y_train = np.zeros((len(X_train)))
+    lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
 
+    from test_nn import Net
+    import torch
+    model = Net()
+    model.load_state_dict(torch.load('model.net', map_location='cpu'))
 
-    exit()
+    X = np.vstack([lin_test_preds, ensemble_test_preds, lin_min_dist, ensemble_min_dist]).T
+    return name, model.predict(X)

@@ -27,7 +27,7 @@ from joblib import Parallel, delayed
 
 from cdd_plots import create_cdd
 from models import PyTorchLinear, PyTorchEnsemble
-from selection import run_v1, run_v2, run_v3, run_v4, run_v5, run_v6, selection_oracle_percent
+from selection import run_v1, run_v2, run_v3, run_v4, run_v5, run_v6, selection_oracle_percent, run_v7
 from viz import plot_rocs
 from explainability import get_explanations
 from tsx.model_selection import ROC_Member
@@ -197,7 +197,7 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     try:
         f_c = MedianPredictionEnsemble.load_model(ds_name, ds_index)
     except Exception:
-        print(f'retrain nns for {ds_name}/{ds_index}')
+        #print(f'retrain nns for {ds_name}/{ds_index}')
         with fixedseed(np, 20231103):
             f_c = MedianPredictionEnsemble([MLPRegressor((28,), learning_rate_init=lr, max_iter=max_iter_nn) for _ in range(10)])
             f_c.fit(x_train, y_train.squeeze())
@@ -334,6 +334,13 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     selection_results[name] = np.mean(test_selection)
 
     name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, calibrate=True)
+    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    loss_test_test = rmse(test_prediction_test, y_test)
+    test_results[name] = loss_test_test
+    selection_results[name] = np.mean(test_selection)
+
+    # v7
+    name, test_selection = run_v7(x_test, lin_rocs, ensemble_rocs, lin_preds_test, nn_preds_test)
     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
     loss_test_test = rmse(test_prediction_test, y_test)
     test_results[name] = loss_test_test
