@@ -7,25 +7,44 @@ from torch.utils.data import TensorDataset, DataLoader, ConcatDataset
 from torch.optim.lr_scheduler import StepLR
 from seedpy import fixedseed
 from tsx.utils import get_device
+from os.path import exists
 
 import tqdm
+import pickle
 from os import listdir
 from main import rmse
 import pandas as pd
 from cdd_plots import create_cdd
 
+def load_or_compute(path, func, *args, **kwargs):
+    if not exists(path):
+        return func(*args, **kwargs)
+    
+    # Try torch
+    try:
+        return torch.load(path)
+    except pickle.UnpicklingError:
+        pass
+
+    # Try numpy
+    try:
+        return np.load(path)
+    except ValueError:
+        pass
+
+    raise NotImplementedError(f'Cannot load file {path}')
+
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.fc1 = nn.Linear(4, 128)
-        self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, 1)
+        self.fc1 = nn.Linear(4, 32)
+        self.fc3 = nn.Linear(32, 1)
 
     def forward(self, x):
         x = self.fc1(x)
         x = F.relu(x)
-        x = self.fc2(x)
-        x = F.relu(x)
+        # x = self.fc2(x)
+        # x = F.relu(x)
         x = self.fc3(x)
         output = F.sigmoid(x)
         return output
@@ -40,6 +59,7 @@ class Net(nn.Module):
 
 def train(epoch, model, device, train_loader, optimizer, _lambda):
     model.train()
+    model.to(device)
     epoch_prediction_loss = []
     epoch_total_loss = []
     epoch_purity = []
@@ -101,12 +121,29 @@ def test(epoch, model, device, test_loader, _lambda):
             epoch_purity.append(p_t)
 
     return torch.mean(torch.hstack(epoch_total_loss)).item(), torch.mean(torch.hstack(epoch_prediction_loss)).item(), torch.mean(torch.hstack(epoch_purity)).item()
+
+def train_global_model(train_dl, val_dl):
+    device = get_device()
+    n_epochs = 50
+    #_lambda = 0
+    _lambda = 0.01
+
+    with fixedseed(torch, 102391):
+        model = Net().to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=2e-3)
+
+        for epoch in range(n_epochs):
+            train_total, train_prediction, train_purity = train(epoch, model, device, train_dl, optimizer, _lambda)
+            val_total, val_prediction, val_purity = test(epoch, model, device, val_dl, _lambda)
+            print(f'{train_total:.4f}, {train_prediction:.4f}, {train_purity:.2f} | {val_total:.4f}, {val_prediction:.4f} {val_purity:.2f}')
+            torch.save(model.to('cpu').state_dict(), 'model.net')
+            print('---'*30)
+
+    return model.to('cpu').state_dict()
+
     
 
 def global_model():
-
-    device = get_device()
-    print(device)
 
     rng = np.random.RandomState(92848372)
     ds_indices = listdir('data/optim_london_smart_meters_nomissing')
@@ -138,26 +175,9 @@ def global_model():
     train_dl = DataLoader(train_ds, batch_size=batch_size, pin_memory=True)
     val_dl = DataLoader(val_ds, batch_size=batch_size, pin_memory=True)
 
-    n_epochs = 1
-    from os.path import exists
-    if not exists('model.net'):
-        with fixedseed(torch, 102391):
-            model = Net().to(device)
-            optimizer = torch.optim.Adam(model.parameters(), lr=2e-3)
-            #_lambda = 0
-            _lambda = 0.01
-
-            for epoch in range(n_epochs):
-                train_total, train_prediction, train_purity = train(epoch, model, device, train_dl, optimizer, _lambda)
-                val_total, val_prediction, val_purity = test(epoch, model, device, val_dl, _lambda)
-                print(f'{train_total:.4f}, {train_prediction:.4f}, {train_purity:.2f} | {val_total:.4f}, {val_prediction:.4f} {val_purity:.2f}')
-                #torch.save(model.state_dict(), 'model.net')
-                print('---'*30)
-
-            model = model.to('cpu')
-    else:
-        model = Net()
-        model.load_state_dict(torch.load('model.net', map_location='cpu'))
+    weights = load_or_compute('model.net', train_global_model, train_dl, val_dl)
+    model = Net()
+    model.load_state_dict(weights)
 
     #print('selection percentage', np.mean(selection))
     for ds_index in tqdm.tqdm(ds_indices, desc='test'):
