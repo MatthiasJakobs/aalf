@@ -18,12 +18,15 @@ class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.fc1 = nn.Linear(4, 128)
-        self.fc2 = nn.Linear(128, 1)
+        self.fc2 = nn.Linear(128, 128)
+        self.fc3 = nn.Linear(128, 1)
 
     def forward(self, x):
         x = self.fc1(x)
         x = F.relu(x)
         x = self.fc2(x)
+        x = F.relu(x)
+        x = self.fc3(x)
         output = F.sigmoid(x)
         return output
 
@@ -37,9 +40,9 @@ class Net(nn.Module):
 
 def train(epoch, model, device, train_loader, optimizer, _lambda):
     model.train()
-    epoch_total_loss = 0
-    epoch_prediction_loss = 0
-    epoch_constrained_loss = 0
+    epoch_prediction_loss = []
+    epoch_total_loss = []
+    epoch_purity = []
     for (X, y) in (tbar := tqdm.tqdm(train_loader)):
         tbar.set_description(f'epoch {epoch} train')
         X, y = X.to(device), y.to(device)
@@ -50,27 +53,31 @@ def train(epoch, model, device, train_loader, optimizer, _lambda):
 
         optimizer.zero_grad()
         p_t = model(X).squeeze()
-        prediction_loss = ((y - (p_t * fi_preds + (1-p_t) * fc_preds))**2).mean()
-        constrained_loss = (_lambda * (1-p_t)).mean()
-        loss = prediction_loss + constrained_loss
+        prediction_loss = ((y - (p_t * fi_preds + (1-p_t) * fc_preds))**2)
+        constrained_loss = (_lambda * (1-p_t))
+        loss = prediction_loss.mean() + constrained_loss.mean()
         loss.backward()
         optimizer.step()
 
-        epoch_total_loss += loss.item()
-        epoch_prediction_loss += prediction_loss.item()
-        epoch_constrained_loss += constrained_loss.item()
+        # Total loss
+        epoch_total_loss.append(prediction_loss.detach() + constrained_loss.detach())
 
-    epoch_total_loss /= len(train_loader)
-    epoch_prediction_loss /= len(train_loader)
-    epoch_constrained_loss /= len(train_loader)
+        # Quantized prediction loss
+        p_t = (p_t > 0.5).float()
+        prediction_loss = ((y - (p_t * fi_preds + (1-p_t) * fc_preds))**2)
+        epoch_prediction_loss.append(prediction_loss)
 
-    return epoch_total_loss, epoch_prediction_loss, epoch_constrained_loss
+        # Purity
+        epoch_purity.append(p_t)
+
+    return torch.mean(torch.hstack(epoch_total_loss)).item(), torch.mean(torch.hstack(epoch_prediction_loss)).item(), torch.mean(torch.hstack(epoch_purity)).item()
 
 
 def test(epoch, model, device, test_loader, _lambda):
     model.eval()
-    percentage_ones = 0
-    total_loss = 0
+    epoch_total_loss = []
+    epoch_prediction_loss = []
+    epoch_purity = []
     with torch.no_grad():
         for (X, y) in (tbar := tqdm.tqdm(test_loader)):
             tbar.set_description(f'epoch {epoch} val')
@@ -81,16 +88,19 @@ def test(epoch, model, device, test_loader, _lambda):
             fc_preds = X[:, 1]
 
             p_t = (model(X).squeeze() > 0.5).float()
-            prediction_loss = ((y - (p_t * fi_preds + (1-p_t) * fc_preds))**2).mean()
-            constrained_loss = (_lambda * (1-p_t)).mean()
-            loss = prediction_loss + constrained_loss
-            total_loss += loss
-            percentage_ones += p_t.sum()
+            prediction_loss = ((y - (p_t * fi_preds + (1-p_t) * fc_preds))**2)
+            constrained_loss = (_lambda * (1-p_t))
 
-    percentage_ones /= len(test_loader.dataset)
-    total_loss /= len(test_loader)
+            # Total loss
+            epoch_total_loss.append(prediction_loss.detach() + constrained_loss.detach())
 
-    return total_loss.item(), percentage_ones.item()
+            # Quantized prediction loss
+            epoch_prediction_loss.append(prediction_loss)
+
+            # Purity
+            epoch_purity.append(p_t)
+
+    return torch.mean(torch.hstack(epoch_total_loss)).item(), torch.mean(torch.hstack(epoch_prediction_loss)).item(), torch.mean(torch.hstack(epoch_purity)).item()
     
 
 def global_model():
@@ -107,9 +117,8 @@ def global_model():
     val_data = []
     test_data = []
     for ds_index in tqdm.tqdm(ds_indices):
-        test_results = {}
-        selection_results = {}
-        #print('---'*10, ds_index, '---'*10)
+        if rng.binomial(1, p=0.95, size=1):
+            continue
         save_x = np.load(f'data/optim_london_smart_meters_nomissing/{ds_index}/train_X.npy')
         save_y = np.load(f'data/optim_london_smart_meters_nomissing/{ds_index}/train_y.npy')
         X = torch.from_numpy(save_x).float()
@@ -125,28 +134,33 @@ def global_model():
     val_ds = ConcatDataset(val_data)
     print('Train size', len(train_ds))
     print('Val size', len(val_ds))
-    batch_size = 2048
-    train_dl = DataLoader(train_ds, batch_size=batch_size)
-    val_dl = DataLoader(val_ds, batch_size=batch_size)
+    batch_size = 4086
+    train_dl = DataLoader(train_ds, batch_size=batch_size, pin_memory=True)
+    val_dl = DataLoader(val_ds, batch_size=batch_size, pin_memory=True)
 
-    n_epochs = 70
-    with fixedseed(torch, 102391):
-        model = Net().to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=2e-4)
-        _lambda = 0.01
+    n_epochs = 1
+    from os.path import exists
+    if not exists('model.net'):
+        with fixedseed(torch, 102391):
+            model = Net().to(device)
+            optimizer = torch.optim.Adam(model.parameters(), lr=2e-3)
+            #_lambda = 0
+            _lambda = 0.01
 
-        for epoch in range(n_epochs):
-            total_loss, prediction_loss, constrained_loss = train(epoch, model, device, train_dl, optimizer, _lambda)
-            val_loss, val_percent_ones = test(epoch, model, device, val_dl, _lambda)
-            # if (epoch+1) % 10 == 0:
-            #     print(epoch, total_loss, prediction_loss, constrained_loss, '|', val_loss, val_percent_ones)
-            print(epoch, total_loss, prediction_loss, constrained_loss, '|', val_loss, val_percent_ones)
-            torch.save(model.state_dict(), 'model.net')
+            for epoch in range(n_epochs):
+                train_total, train_prediction, train_purity = train(epoch, model, device, train_dl, optimizer, _lambda)
+                val_total, val_prediction, val_purity = test(epoch, model, device, val_dl, _lambda)
+                print(f'{train_total:.4f}, {train_prediction:.4f}, {train_purity:.2f} | {val_total:.4f}, {val_prediction:.4f} {val_purity:.2f}')
+                #torch.save(model.state_dict(), 'model.net')
+                print('---'*30)
 
-    exit()
+            model = model.to('cpu')
+    else:
+        model = Net()
+        model.load_state_dict(torch.load('model.net', map_location='cpu'))
 
     #print('selection percentage', np.mean(selection))
-    for ds_index in tqdm.tqdm(ds_indices[:10]):
+    for ds_index in tqdm.tqdm(ds_indices, desc='test'):
         test_results = {}
         selection_results = {}
 
