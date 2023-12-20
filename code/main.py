@@ -100,7 +100,7 @@ def main():
         # Choose subset
         rng = np.random.RandomState(12389182)
         run_size = len(X)
-        #run_size = int(len(X)*0.2)
+        #run_size = int(len(X)*0.3)
         indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
         
         # Remove datapoints that contain NaNs after preprocessing (for example, if all values are the same)
@@ -114,7 +114,7 @@ def main():
         max_epochs = 500
 
         print(ds_name, 'n_series', len(indices))
-        # for i in indices:
+        # for i in tqdm.tqdm(indices[1110:]):
         #     print('-'*30, i, '-'*30)
         #     log_test, log_selection = run_experiment(ds_name, i, X[i], L, horizons[i], max_iter_nn=max_epochs)
         # exit()
@@ -255,13 +255,9 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
 
     # -------------------------------- RoC based methods
 
-    makedirs(f'explanations/{ds_name}/{ds_index}', exist_ok=True)
-    pt_linear = PyTorchLinear(f_i)
-    pt_ensemble = PyTorchEnsemble(f_c)
-
     # Find best models on each validation datapoint
-    lin_error = (pt_linear.predict(x_val).squeeze() - y_val)**2
-    ensemble_error = (pt_ensemble.predict(x_val).squeeze() - y_val)**2
+    lin_error = (lin_preds_val.squeeze() - y_val)**2
+    ensemble_error = (nn_preds_val.squeeze() - y_val)**2
     selection = (lin_error <= ensemble_error)
     lin_indices = np.where(selection)[0]
     ensemble_indices = np.where(~selection)[0]
@@ -285,8 +281,11 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
         pt_background = torch.from_numpy(background)
 
         with fixedseed([torch, np], seed=(20231110+ds_index)):
+            pt_linear = PyTorchLinear(f_i)
+            pt_ensemble = PyTorchEnsemble(f_c)
             lin_expl = get_explanations(pt_linear, pt_xval_lin, pt_yval_lin, pt_background)
             ensemble_expl = get_explanations(pt_ensemble, pt_xval_ens, pt_yval_ens, pt_background)
+        makedirs(f'explanations/{ds_name}/{ds_index}', exist_ok=True)
         np.save(f'explanations/{ds_name}/{ds_index}/lin_expl.npy', lin_expl)
         np.save(f'explanations/{ds_name}/{ds_index}/ensemble_expl.npy', ensemble_expl)
 
@@ -318,14 +317,14 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
         save_y = y_val
         save_x = np.vstack([lin_preds_val, nn_preds_val, lin_min_dist, ensemble_min_dist]).T
 
-        lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
-
         makedirs(f'data/optim_{ds_name}/{ds_index}', exist_ok=True)
         np.save(f'data/optim_{ds_name}/{ds_index}/train_X.npy', save_x)
         np.save(f'data/optim_{ds_name}/{ds_index}/train_y.npy', save_y)
+        lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
         np.save(f'data/optim_{ds_name}/{ds_index}/test_X.npy', np.vstack([lin_preds_test, nn_preds_test, lin_min_dist, ensemble_min_dist]).T)
         np.save(f'data/optim_{ds_name}/{ds_index}/test_y.npy', y_test)
 
+    return test_results, selection_results
     # v4
     name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index)
     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
