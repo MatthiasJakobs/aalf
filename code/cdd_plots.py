@@ -408,11 +408,11 @@ def main():
     # print('create pedestrian counts cdd')
     # create_cdd('pedestrian_counts')
     print('create london smart meters cdd')
-    create_cdd('london_smart_meters_nomissing', drop_columns=['v4_0.5_calibrated'])
-    exit()
-
-    create_all_cdd(drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.4', 'v4_0.3'])
-    #create_cdd_overall(drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.4', 'v4_0.3'])
+    create_cdd('london_smart_meters_nomissing')
+    # print('create all cdd')
+    # create_all_cdd(drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.4', 'v4_0.3'])
+    # print('create overall cdd')
+    # create_cdd_overall(drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.4', 'v4_0.3'])
 
 if __name__ == '__main__':
     main()

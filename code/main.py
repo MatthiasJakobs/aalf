@@ -100,7 +100,7 @@ def main():
         # Choose subset
         rng = np.random.RandomState(12389182)
         run_size = len(X)
-        #run_size = int(len(X)*0.3)
+        #run_size = int(len(X)*0.1)
         indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
         
         # Remove datapoints that contain NaNs after preprocessing (for example, if all values are the same)
@@ -114,7 +114,7 @@ def main():
         max_epochs = 500
 
         print(ds_name, 'n_series', len(indices))
-        # for i in tqdm.tqdm(indices[1110:]):
+        # for i in tqdm.tqdm(indices):
         #     print('-'*30, i, '-'*30)
         #     log_test, log_selection = run_experiment(ds_name, i, X[i], L, horizons[i], max_iter_nn=max_epochs)
         # exit()
@@ -187,12 +187,6 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
         with open(f'models/{ds_name}/{ds_index}/linear.pickle', 'wb') as f:
             pickle.dump(f_i, f)
 
-    lin_preds_val = f_i.predict(x_val)
-    lin_preds_test = f_i.predict(x_test)
-    loss_i_val = rmse(lin_preds_val, y_val)
-    loss_i_test = rmse(lin_preds_test, y_test)
-    test_results['linear'] = loss_i_test
-
     # Neural net
     try:
         f_c = MedianPredictionEnsemble.load_model(ds_name, ds_index)
@@ -203,11 +197,22 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
             f_c.fit(x_train, y_train.squeeze())
             f_c.save_model(ds_name, ds_index)
 
+    lin_preds_val = f_i.predict(x_val)
+    lin_preds_test = f_i.predict(x_test)
+    loss_i_val = rmse(lin_preds_val, y_val)
+    loss_i_test = rmse(lin_preds_test, y_test)
+    test_results['linear'] = loss_i_test
+
     nn_preds_val = f_c.predict(x_val)
     nn_preds_test = f_c.predict(x_test)
     loss_nn_val = rmse(nn_preds_val, y_val)
     loss_nn_test = rmse(nn_preds_test, y_test)
     test_results['nn'] = loss_nn_test
+
+    lin_error = (lin_preds_val.squeeze()-y_val.squeeze())**2
+    nn_error = (nn_preds_val.squeeze()-y_val.squeeze())**2
+    lin_better = np.where(lin_error <= nn_error)[0]
+    nn_better = np.where(lin_error > nn_error)[0]
 
     # -------------------------------- Model selection
 
@@ -221,9 +226,7 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     optimal_selection_val = (lin_preds_val-y_val)**2 <= (nn_preds_val-y_val)**2
     optimal_selection_test = (lin_preds_test-y_test)**2 <= (nn_preds_test-y_test)**2
 
-    optimal_prediction_val = np.choose(optimal_selection_val, [nn_preds_val, lin_preds_val])
     optimal_prediction_test = np.choose(optimal_selection_test, [nn_preds_test, lin_preds_test])
-    loss_optimal_val = rmse(optimal_prediction_val, y_val)
     loss_optimal_test = rmse(optimal_prediction_test, y_test)
     test_results['selOpt'] = loss_optimal_test
     selection_results['selOpt'] = np.mean(optimal_selection_test)
@@ -255,13 +258,6 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
 
     # -------------------------------- RoC based methods
 
-    # Find best models on each validation datapoint
-    lin_error = (lin_preds_val.squeeze() - y_val)**2
-    ensemble_error = (nn_preds_val.squeeze() - y_val)**2
-    selection = (lin_error <= ensemble_error)
-    lin_indices = np.where(selection)[0]
-    ensemble_indices = np.where(~selection)[0]
-    
     # Compute explanations on validation data points
     try:
         lin_expl = np.load(f'explanations/{ds_name}/{ds_index}/lin_expl.npy')
@@ -272,11 +268,11 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
         background = x_train[indices]
 
         # If available, use gpu acceleration
-        pt_xval_lin = torch.from_numpy(x_val[lin_indices])
-        pt_yval_lin = torch.from_numpy(y_val[lin_indices])
+        pt_xval_lin = torch.from_numpy(x_val[lin_better])
+        pt_yval_lin = torch.from_numpy(y_val[lin_better])
 
-        pt_xval_ens = torch.from_numpy(x_val[ensemble_indices])
-        pt_yval_ens = torch.from_numpy(y_val[ensemble_indices])
+        pt_xval_ens = torch.from_numpy(x_val[nn_better])
+        pt_yval_ens = torch.from_numpy(y_val[nn_better])
 
         pt_background = torch.from_numpy(background)
 
@@ -290,23 +286,23 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
         np.save(f'explanations/{ds_name}/{ds_index}/ensemble_expl.npy', ensemble_expl)
 
     # Load (or compute) rocs
-    if x_val[lin_indices].shape != lin_expl.shape:
-        if x_val[lin_indices].shape[0] == 0:
+    if x_val[lin_better].shape != lin_expl.shape:
+        if x_val[lin_better].shape[0] == 0:
             lin_rocs = []
         else:
-            print('redo', ds_index, x_val[lin_indices].shape, lin_expl.shape)
+            print('redo', ds_index, x_val[lin_better].shape, lin_expl.shape)
             return test_results, selection_results
     else:
-        lin_rocs = compute_rocs(x_val[lin_indices], y_val[lin_indices], lin_expl, lin_error[lin_indices])
+        lin_rocs = compute_rocs(x_val[lin_better], y_val[lin_better], lin_expl, lin_error[lin_better])
 
-    if x_val[ensemble_indices].shape != ensemble_expl.shape:
-        if x_val[ensemble_indices].shape[0] == 0:
+    if x_val[nn_better].shape != ensemble_expl.shape:
+        if x_val[nn_better].shape[0] == 0:
             ensemble_rocs = []
         else:
-            print('redo', ds_index, x_val[ensemble_indices].shape, ensemble_expl.shape)
+            print('redo', ds_index, x_val[nn_better].shape, ensemble_expl.shape)
             return test_results, selection_results
     else:
-        ensemble_rocs = compute_rocs(x_val[ensemble_indices], y_val[ensemble_indices], ensemble_expl, ensemble_error[ensemble_indices])
+        ensemble_rocs = compute_rocs(x_val[nn_better], y_val[nn_better], ensemble_expl, nn_error[nn_better])
 
     # ------------------ Run new selection methods
 
