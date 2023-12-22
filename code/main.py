@@ -225,8 +225,10 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
 
     lin_error = (lin_preds_val.squeeze()-y_val.squeeze())**2
     nn_error = (nn_preds_val.squeeze()-y_val.squeeze())**2
-    lin_better = np.where(lin_error <= nn_error)[0]
-    nn_better = np.where(lin_error > nn_error)[0]
+    closeness_threshold = 1e-6
+    lin_better = np.where(lin_error-nn_error <= closeness_threshold)[0]
+    nn_better = np.array([idx for idx in range(len(lin_error)) if idx not in lin_better])
+    assert len(lin_better) + len(nn_better) == len(lin_error)
 
     # -------------------------------- Model selection
 
