@@ -105,7 +105,7 @@ def main():
         
         # Remove datapoints that contain NaNs after preprocessing (for example, if all values are the same)
         if ds_name == 'london_smart_meters_nomissing':
-            indices = [idx for idx in indices if idx != 5531]
+            indices = [idx for idx in indices if idx not in [ 5531, 4642, 2846, 179, 2877, 5061, 920, 1440, 3076, 5538] ]
 
         if ds_name != 'weather' :
             horizons = np.ones((len(X))).astype(np.int8)
