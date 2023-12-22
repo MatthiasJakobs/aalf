@@ -89,11 +89,21 @@ def main():
     L = 10
 
     #ds_names = ['london_smart_meters_nomissing', 'kdd_cup_nomissing', 'pedestrian_counts', 'weather']
-    ds_names = ['london_smart_meters_nomissing']
+    ds_names = ['web_traffic']
+
 
     for ds_name in ds_names:
-        X, horizons = load_monash(ds_name, return_horizon=True)
-        X = X['series_value']
+        if ds_name == 'web_traffic':
+            X = load_monash('web_traffic_weekly')
+            X = np.vstack([x.to_numpy() for x in X['series_value']])
+            # Find ones without missing data
+            to_take = np.where((X==0).sum(axis=1) ==0)[0]
+            X = X[to_take]
+            # Subsample since this one is too large
+            X = X[np.random.RandomState(1234).choice(len(to_take), size=2000, replace=False)]
+        else:
+            X, horizons = load_monash(ds_name, return_horizon=True)
+            X = X['series_value']
         log_test = []
         log_selection = []
 
@@ -110,8 +120,12 @@ def main():
         if ds_name != 'weather' :
             horizons = np.ones((len(X))).astype(np.int8)
 
-        lr = 1e-3
-        max_epochs = 500
+        if ds_name == 'web_traffic':
+            lr = 1e-5
+            max_epochs = 10000
+        else:
+            lr = 1e-3
+            max_epochs = 500
 
         print(ds_name, 'n_series', len(indices))
         # for i in tqdm.tqdm(indices):
