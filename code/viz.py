@@ -87,6 +87,35 @@ def plot_selection_percentage(ds_name):
     plt.tight_layout()
     plt.savefig('test.png')
     print(names)
+
+def plot_all_selection_percentage():
+    ds_names = ['web_traffic', 'london_smart_meters_nomissing', 'kdd_cup_nomissing', 'pedestrian_counts', 'weather']
+    drop_columns = ['v4_0.5_calibrated']
+    width = 6
+    height = len(ds_names)/2 * width
+    fig, axs = plt.subplots(nrows=len(ds_names), ncols=1, sharex=True, sharey=True, figsize=(width, height))
+    names = None
+    for row_idx in range(len(ds_names)):
+        ds_name = ds_names[row_idx]
+        df = pd.read_csv(f'results/{ds_name}_selection.csv')
+        df = df.drop(columns=drop_columns, errors='ignore')
+        if names is None:
+            names = df.columns[1:]
+
+        ax = axs[row_idx]
+        ax.set_title(ds_name)
+        ax.set_ylabel(r'$p_{linear}$')
+        ax.axhline(0.5, ls='--', alpha=0.5, color='black')
+        ax.violinplot(df.iloc[:, 1:].to_numpy(), showmedians=True)
+
+        epsilon = 0.05
+        ax.set_ylim(0-epsilon,1+epsilon)
+        ax.set_xticks(ticks=np.arange(len(names))+1, labels=names.tolist(), rotation=60)
+
+    fig.tight_layout()
+    fig.savefig('test_all.png')
+        
     
 if __name__ == '__main__':
+    plot_all_selection_percentage()
     plot_selection_percentage('weather')

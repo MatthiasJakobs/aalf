@@ -94,30 +94,33 @@ def main():
 
     for ds_name in ds_names:
         if ds_name == 'web_traffic':
-            X = load_monash('web_traffic_weekly')
+            X, horizons = load_monash('web_traffic_daily_nomissing', return_horizon=True)
             X = np.vstack([x.to_numpy() for x in X['series_value']])
             # Find ones without missing data
-            to_take = np.where((X==0).sum(axis=1) ==0)[0]
+            to_take = np.where((X==0).sum(axis=1) == 0)[0]
             X = X[to_take]
             # Subsample since this one is too large
-            X = X[np.random.RandomState(1234).choice(len(to_take), size=2000, replace=False)]
+            X = X[np.random.RandomState(1234).choice(len(to_take), size=3000, replace=False)]
         else:
             X, horizons = load_monash(ds_name, return_horizon=True)
             X = X['series_value']
+
         log_test = []
         log_selection = []
 
         # Choose subset
         rng = np.random.RandomState(12389182)
         run_size = len(X)
-        #run_size = int(len(X)*0.1)
+        #run_size = int(len(X)*0.4)
         indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
         
         # Remove datapoints that contain NaNs after preprocessing (for example, if all values are the same)
         if ds_name == 'london_smart_meters_nomissing':
-            indices = [idx for idx in indices if idx not in [ 5531, 4642, 2846, 179, 2877, 5061, 920, 1440, 3076, 5538] ]
+            indices = [idx for idx in indices if idx not in [ 65, 5531, 4642, 2846, 179, 2877, 5061, 920, 1440, 3076, 5538 ] ]
+        if ds_name == 'weather':
+            indices = [idx for idx in indices if idx not in [943] ]
 
-        if ds_name != 'weather' :
+        if ds_name not in [ 'weather', 'web_traffic' ]:
             horizons = np.ones((len(X))).astype(np.int8)
 
         if ds_name == 'web_traffic':
@@ -128,12 +131,8 @@ def main():
             max_epochs = 500
 
         print(ds_name, 'n_series', len(indices))
-        # for i in tqdm.tqdm(indices):
-        #     print('-'*30, i, '-'*30)
-        #     log_test, log_selection = run_experiment(ds_name, i, X[i], L, horizons[i], max_iter_nn=max_epochs)
-        # exit()
 
-        # for i in [1112, 1952, 2265]:
+        # for i in [3401]:
         #     print('-'*30, i, '-'*30)
         #     log_test, log_selection = run_experiment(ds_name, i, X[i], L, horizons[i], max_iter_nn=max_epochs)
         # exit()
@@ -336,7 +335,7 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
         np.save(f'data/optim_{ds_name}/{ds_index}/test_X.npy', np.vstack([lin_preds_test, nn_preds_test, lin_min_dist, ensemble_min_dist]).T)
         np.save(f'data/optim_{ds_name}/{ds_index}/test_y.npy', y_test)
 
-    return test_results, selection_results
+    #return test_results, selection_results
     # v4
     name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index)
     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
@@ -344,14 +343,14 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     test_results[name] = loss_test_test
     selection_results[name] = np.mean(test_selection)
 
-    name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, calibrate=True)
-    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    loss_test_test = rmse(test_prediction_test, y_test)
-    test_results[name] = loss_test_test
-    selection_results[name] = np.mean(test_selection)
+    # name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, calibrate=True)
+    # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    # loss_test_test = rmse(test_prediction_test, y_test)
+    # test_results[name] = loss_test_test
+    # selection_results[name] = np.mean(test_selection)
 
-    # v7
-    name, test_selection = run_v7(x_test, lin_rocs, ensemble_rocs, lin_preds_test, nn_preds_test)
+    # v5
+    name, test_selection = run_v5(x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231222+ds_index)
     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
     loss_test_test = rmse(test_prediction_test, y_test)
     test_results[name] = loss_test_test

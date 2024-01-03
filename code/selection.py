@@ -147,11 +147,8 @@ def run_v4(val_selection, x_val, x_test, lin_val_preds, ens_val_preds, lin_test_
     return name, (clf.predict_proba(X_test)[:, 1] > best_thresh).astype(np.int8)
 
 # Train on biggest errors in validation set
-def run_v5(x_val, y_val, x_test, y_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, p=0.99, calibrate=False):
-    if calibrate:
-        name = f'v5_{p}_calibrated'
-    else:
-        name = f'v5_{p}'
+def run_v5(x_val, y_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state):
+    name = f'v5'
     # What to do if empty rocs
     if len(ensemble_rocs) == 0:
         # Choose linear
@@ -162,20 +159,10 @@ def run_v5(x_val, y_val, x_test, y_test, lin_val_preds, ens_val_preds, lin_test_
 
     lin_min_dist, ensemble_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
 
-    y_train = selection_oracle_percent(y_val, lin_val_preds, ens_val_preds, p)
+    y_train = selection_oracle_percent(y_val, lin_val_preds, ens_val_preds, 0.5)
 
-    # lin_min_dist_indices = np.argmin(np.vstack([lin_roc.euclidean_distance(x_val) for lin_roc in lin_rocs]), axis=0)
-    # ensemble_min_dist_indices = np.argmin(np.vstack([ensemble_roc.euclidean_distance(x_val) for ensemble_roc in ensemble_rocs]), axis=0)
-    # se_lin = [lin_rocs[_idx] for _idx in lin_min_dist_indices]
-    # se_ens = [ensemble_rocs[_idx] for _idx in ensemble_min_dist_indices]
-    # lin_closest_roc_losses = np.array([roc.squared_error for roc in se_lin])
-    # nn_closest_roc_losses = np.array([roc.squared_error for roc in se_ens])
-
-    # X_train = np.vstack([lin_closest_roc_losses / nn_closest_roc_losses, lin_val_preds, ens_val_preds, lin_min_dist, ensemble_min_dist]).T
-
-    #X_train = np.vstack([lin_val_preds, ens_val_preds, lin_min_dist, ensemble_min_dist]).T
-    X_train = np.vstack([(lin_val_preds-ens_val_preds)**2, (lin_min_dist-ensemble_min_dist)**2]).T
-    X_train = np.concatenate([X_train, x_val], axis=1)
+    X_train = np.vstack([lin_val_preds, ens_val_preds, lin_min_dist, ensemble_min_dist]).T
+    #X_train = np.concatenate([X_train, x_val], axis=1)
 
     clf = BalancedRandomForestClassifier(n_estimators=128, replacement=True, random_state=random_state, sampling_strategy='not minority')
     #clf = RandomForestClassifier(n_estimators=128, random_state=random_state)
@@ -183,22 +170,9 @@ def run_v5(x_val, y_val, x_test, y_test, lin_val_preds, ens_val_preds, lin_test_
 
     lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
 
-    # lin_min_dist_indices = np.argmin(np.vstack([lin_roc.euclidean_distance(x_test) for lin_roc in lin_rocs]), axis=0)
-    # ensemble_min_dist_indices = np.argmin(np.vstack([ensemble_roc.euclidean_distance(x_test) for ensemble_roc in ensemble_rocs]), axis=0)
-    # se_lin = [lin_rocs[_idx] for _idx in lin_min_dist_indices]
-    # se_ens = [ensemble_rocs[_idx] for _idx in ensemble_min_dist_indices]
-    # lin_closest_roc_losses = np.array([roc.squared_error for roc in se_lin])
-    # nn_closest_roc_losses = np.array([roc.squared_error for roc in se_ens])
-    # X_test = np.vstack([lin_closest_roc_losses / nn_closest_roc_losses, lin_test_preds, ens_test_preds, lin_min_dist, ensemble_min_dist]).T
+    X_test = np.vstack([lin_test_preds, ens_test_preds, lin_min_dist, ensemble_min_dist]).T
 
-    #X_test = np.vstack([lin_test_preds, ens_test_preds, lin_min_dist, ensemble_min_dist]).T
-    X_test = np.vstack([(lin_test_preds-ens_test_preds)**2, (lin_min_dist-ensemble_min_dist)**2]).T
-    X_test = np.concatenate([X_test, x_test], axis=1)
-    oracle_y = selection_oracle_percent(y_test, lin_test_preds, ens_test_preds, p)
-    #print(p, 'train f1', f'{f1_score(clf.predict(X_train), y_train):.3f}', 'test f1', f'{f1_score(clf.predict(X_test), oracle_y):.3f}', f'{clf.predict(X_test).mean():.3f}')
-
-
-    return name, clf.predict(X_test)
+    return name, (clf.predict_proba(X_test)[:, 1] > 0.5).astype(np.int8)
 
 # Idea: Take loss achieved for RoCMember as proxy for expected loss on new data
 def run_v6(x_test, lin_rocs, nn_rocs):

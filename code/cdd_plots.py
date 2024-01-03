@@ -14,20 +14,21 @@ DATASET_DICT = {
     'weather': 'Weather',
     'pedestrian_counts': 'Pedestrian Counts',
     'london_smart_meters_nomissing': 'London Smart Meters',
+    'web_traffic': 'Web Traffic'
 }
 
 def create_cdd(ds_name, drop_columns=None):
     df_test = pd.read_csv(f'results/{ds_name}_test.csv')
     df_test = df_test.set_index('dataset_names')
 
+    if drop_columns is not None:
+        df_test = df_test.drop(columns=drop_columns)
+
     # Test if two columns are identical. Heuristically via col-sum
     test_col_sum = df_test.sum(axis=0).to_numpy()
     if len(np.unique(test_col_sum)) != len(test_col_sum):
         print('At least two columns equal in test')
         print(df_test)
-
-    if drop_columns is not None:
-        df_test.drop(columns=drop_columns)
 
     diagram = Diagram(
         df_test.to_numpy(),
@@ -134,8 +135,7 @@ def create_cdd(ds_name, drop_columns=None):
     remove(f'{ds_name}.log')
 
 def create_all_cdd(drop_columns=None):
-    #ds_names = ['london_smart_meters_nomissing', 'kdd_cup_nomissing', 'weather', 'pedestrian_counts']
-    ds_names = ['london_smart_meters_nomissing', 'kdd_cup_nomissing']
+    ds_names = ['web_traffic', 'london_smart_meters_nomissing', 'kdd_cup_nomissing', 'weather', 'pedestrian_counts']
 
     Xs = []
 
@@ -271,7 +271,7 @@ def create_all_cdd(drop_columns=None):
     remove(f'all_datasets.log')
 
 def create_cdd_overall(drop_columns=None):
-    ds_names = ['london_smart_meters_nomissing', 'kdd_cup_nomissing', 'weather', 'pedestrian_counts']
+    ds_names = ['web_traffic', 'london_smart_meters_nomissing', 'kdd_cup_nomissing', 'weather', 'pedestrian_counts']
 
     Xs = []
 
@@ -410,11 +410,11 @@ def main():
     # print('create london smart meters cdd')
     # create_cdd('london_smart_meters_nomissing')
     print('create web traffic')
-    create_cdd('web_traffic')
+    create_cdd('web_traffic', drop_columns=['selBinom0.99', 'selBinom0.95', 'selBinom0.9', 'v4_0.5_calibrated'])
     # print('create all cdd')
-    # create_all_cdd(drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.4', 'v4_0.3'])
+    # create_all_cdd(drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.3'])
     # print('create overall cdd')
-    # create_cdd_overall(drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.4', 'v4_0.3'])
+    # create_cdd_overall(drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.3'])
 
 if __name__ == '__main__':
     main()
