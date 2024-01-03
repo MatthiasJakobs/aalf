@@ -24,11 +24,13 @@ from sklearn.model_selection import RandomizedSearchCV
 from seedpy import fixedseed
 from os import makedirs
 from joblib import Parallel, delayed
+from os.path import exists
 
 from cdd_plots import create_cdd
 from models import PyTorchLinear, PyTorchEnsemble
 from selection import run_v1, run_v2, run_v3, run_v4, run_v5, run_v6, selection_oracle_percent, run_v7
 from viz import plot_rocs
+from datasets import load_dataset
 from explainability import get_explanations
 from tsx.model_selection import ROC_Member
 from tsx.models.forecaster import split_zero
@@ -88,40 +90,15 @@ def compute_rocs(x, y, explanations, errors, threshold=0):
 def main():
     L = 10
 
-    #ds_names = ['london_smart_meters_nomissing', 'kdd_cup_nomissing', 'pedestrian_counts', 'weather']
-    ds_names = ['web_traffic']
+    ds_names = ['london_smart_meters_nomissing', 'kdd_cup_nomissing', 'pedestrian_counts', 'weather', 'web_traffic']
+    #ds_names = ['pedestrian_counts']
 
 
     for ds_name in ds_names:
-        if ds_name == 'web_traffic':
-            X, horizons = load_monash('web_traffic_daily_nomissing', return_horizon=True)
-            X = np.vstack([x.to_numpy() for x in X['series_value']])
-            # Find ones without missing data
-            to_take = np.where((X==0).sum(axis=1) == 0)[0]
-            X = X[to_take]
-            # Subsample since this one is too large
-            X = X[np.random.RandomState(1234).choice(len(to_take), size=3000, replace=False)]
-        else:
-            X, horizons = load_monash(ds_name, return_horizon=True)
-            X = X['series_value']
-
         log_test = []
         log_selection = []
 
-        # Choose subset
-        rng = np.random.RandomState(12389182)
-        run_size = len(X)
-        #run_size = int(len(X)*0.4)
-        indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
-        
-        # Remove datapoints that contain NaNs after preprocessing (for example, if all values are the same)
-        if ds_name == 'london_smart_meters_nomissing':
-            indices = [idx for idx in indices if idx not in [ 65, 5531, 4642, 2846, 179, 2877, 5061, 920, 1440, 3076, 5538 ] ]
-        if ds_name == 'weather':
-            indices = [idx for idx in indices if idx not in [943] ]
-
-        if ds_name not in [ 'weather', 'web_traffic' ]:
-            horizons = np.ones((len(X))).astype(np.int8)
+        X, horizons, indices = load_dataset(ds_name, fraction=1)
 
         if ds_name == 'web_traffic':
             lr = 1e-5
@@ -137,18 +114,38 @@ def main():
         #     log_test, log_selection = run_experiment(ds_name, i, X[i], L, horizons[i], max_iter_nn=max_epochs)
         # exit()
 
-        log_test, log_selection = zip(*Parallel(n_jobs=-1, backend="loky")(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, horizons[ds_index], lr=lr, max_iter_nn=max_epochs) for ds_index in tqdm.tqdm(indices)))
+        # Load previous results (if available), otherwise create empty
+        if exists(f'results/{ds_name}_test.csv') and exists(f'results/{ds_name}_selection.csv'):
+            test_results = pd.read_csv(f'results/{ds_name}_test.csv')
+            test_results = test_results.set_index('dataset_names')
+            test_results = test_results.T.to_dict()
+            test_selection = pd.read_csv(f'results/{ds_name}_selection.csv')
+            test_selection = test_selection.set_index('dataset_names')
+            test_selection = test_selection.T.to_dict()
+        else:
+            test_results = [{} for _ in range(len(X))]
+            test_selection = [{} for _ in range(len(X))]
+
+        log_test, log_selection = zip(*Parallel(n_jobs=-1, backend='loky')(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, horizons[ds_index], test_results[ds_index], test_selection[ds_index], lr=lr, max_iter_nn=max_epochs) for ds_index in tqdm.tqdm(indices)))
         log_test = pd.DataFrame(list(log_test))
-        log_test.index.rename('dataset_names', inplace=True)
+        log_test = log_test.set_index('dataset_names')
         log_test.to_csv(f'results/{ds_name}_test.csv')
         log_selection = pd.DataFrame(list(log_selection))
-        log_selection.index.rename('dataset_names', inplace=True)
+        log_selection = log_selection.set_index('dataset_names')
         log_selection.to_csv(f'results/{ds_name}_selection.csv')
         #create_cdd(ds_name)
 
-def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
+def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, lr=1e-3, max_iter_nn=500, to_run=None):
     #print(ds_index)
     makedirs(f'models/{ds_name}/{ds_index}', exist_ok=True)
+
+    test_results['dataset_names'] = ds_index
+    selection_results['dataset_names'] = ds_index
+
+    if to_run is None:
+        to_run = ['v4', 'v5']
+    if len(to_run) == 0:
+        return test_results, selection_results
 
     # Split and normalize data
     end_train = int(len(X) * 0.5)
@@ -186,9 +183,6 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     y_train = y_train.astype(np.float32)
     y_val = y_val.astype(np.float32)
     y_test = y_test.astype(np.float32)
-
-    test_results = {}
-    selection_results = {}
 
     # Train base models
     try:
@@ -322,39 +316,41 @@ def run_experiment(ds_name, ds_index, X, L, H, lr=1e-3, max_iter_nn=500):
     # ------------------ Run new selection methods
 
     # Save train data for later
-    from selection import get_roc_dists
-    if len(lin_rocs) > 0 and len(ensemble_rocs) > 0:
-        lin_min_dist, ensemble_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
-        save_y = y_val
-        save_x = np.vstack([lin_preds_val, nn_preds_val, lin_min_dist, ensemble_min_dist]).T
+    # from selection import get_roc_dists
+    # if len(lin_rocs) > 0 and len(ensemble_rocs) > 0:
+    #     lin_min_dist, ensemble_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
+    #     save_y = y_val
+    #     save_x = np.vstack([lin_preds_val, nn_preds_val, lin_min_dist, ensemble_min_dist]).T
 
-        makedirs(f'data/optim_{ds_name}/{ds_index}', exist_ok=True)
-        np.save(f'data/optim_{ds_name}/{ds_index}/train_X.npy', save_x)
-        np.save(f'data/optim_{ds_name}/{ds_index}/train_y.npy', save_y)
-        lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
-        np.save(f'data/optim_{ds_name}/{ds_index}/test_X.npy', np.vstack([lin_preds_test, nn_preds_test, lin_min_dist, ensemble_min_dist]).T)
-        np.save(f'data/optim_{ds_name}/{ds_index}/test_y.npy', y_test)
+    #     makedirs(f'data/optim_{ds_name}/{ds_index}', exist_ok=True)
+    #     np.save(f'data/optim_{ds_name}/{ds_index}/train_X.npy', save_x)
+    #     np.save(f'data/optim_{ds_name}/{ds_index}/train_y.npy', save_y)
+    #     lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
+    #     np.save(f'data/optim_{ds_name}/{ds_index}/test_X.npy', np.vstack([lin_preds_test, nn_preds_test, lin_min_dist, ensemble_min_dist]).T)
+    #     np.save(f'data/optim_{ds_name}/{ds_index}/test_y.npy', y_test)
 
     #return test_results, selection_results
     # v4
-    name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index)
-    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    loss_test_test = rmse(test_prediction_test, y_test)
-    test_results[name] = loss_test_test
-    selection_results[name] = np.mean(test_selection)
+    if 'v4' in to_run:
+        name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index)
+        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+        loss_test_test = rmse(test_prediction_test, y_test)
+        test_results[name] = loss_test_test
+        selection_results[name] = np.mean(test_selection)
 
-    # name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, calibrate=True)
-    # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    # loss_test_test = rmse(test_prediction_test, y_test)
-    # test_results[name] = loss_test_test
-    # selection_results[name] = np.mean(test_selection)
+        # name, test_selection = run_v4(optimal_selection_val, x_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231116+ds_index, calibrate=True)
+        # test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+        # loss_test_test = rmse(test_prediction_test, y_test)
+        # test_results[name] = loss_test_test
+        # selection_results[name] = np.mean(test_selection)
 
     # v5
-    name, test_selection = run_v5(x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231222+ds_index)
-    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    loss_test_test = rmse(test_prediction_test, y_test)
-    test_results[name] = loss_test_test
-    selection_results[name] = np.mean(test_selection)
+    if 'v5' in to_run:
+        name, test_selection = run_v5(x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, lin_rocs, ensemble_rocs, random_state=20231222+ds_index)
+        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+        loss_test_test = rmse(test_prediction_test, y_test)
+        test_results[name] = loss_test_test
+        selection_results[name] = np.mean(test_selection)
 
     # ------------------ Baseline to check if v4 is actually better
     name = 'selBinomOptP'
