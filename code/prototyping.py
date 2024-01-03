@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import tqdm
+import argparse
 
 from joblib import Parallel, delayed
 
@@ -40,17 +41,7 @@ def run_on_subset(override=None):
             del d['dataset_names']
         for d in log_selection:
             del d['dataset_names']
-        # log_test = []
-        # log_selection = []
-        # for ds_index in indices[:5]:
-        #     print(test_results[ds_index])
-        #     _log_test, _log_selection = run_experiment(ds_name, ds_index, X[ds_index], L, horizons[ds_index], test_results[ds_index], test_selection[ds_index], to_run=override)
-        #     log_test.append(_log_test)
-        #     log_selection.append(_log_selection)
-        #     print(_log_test)
-        #     print('----')
 
-        # exit()
         all_results.extend(log_test)
         all_selection.extend(log_selection)
 
@@ -62,5 +53,9 @@ def run_on_subset(override=None):
     log_selection.to_csv(f'results/all_small_selection.csv')
 
 if __name__ == '__main__':
-    run_on_subset()
+    parser = argparse.ArgumentParser(description='Rapid prototyping of new selection methods')
+    parser.add_argument("--override", help='', nargs='+', default=[])
+    args = vars(parser.parse_args())
+
+    run_on_subset(override=args['override'])
     create_cdd('all_small')
