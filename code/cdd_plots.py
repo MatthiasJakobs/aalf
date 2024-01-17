@@ -17,6 +17,14 @@ DATASET_DICT = {
     'web_traffic': 'Web Traffic'
 }
 
+DATASET_DICT_SMALL = {
+    'kdd_cup_nomissing': 'KDD',
+    'weather': 'Weather',
+    'pedestrian_counts': 'Pedestrian',
+    'london_smart_meters_nomissing': 'LSM',
+    'web_traffic': 'Web'
+}
+
 def create_cdd(ds_name, drop_columns=None):
     df_test = pd.read_csv(f'results/{ds_name}_test.csv')
     df_test = df_test.set_index('dataset_names')
@@ -409,12 +417,12 @@ def main():
     # create_cdd('pedestrian_counts')
     # print('create london smart meters cdd')
     # create_cdd('london_smart_meters_nomissing')
-    print('create web traffic')
-    create_cdd('web_traffic', drop_columns=['selBinom0.99', 'selBinom0.95', 'selBinom0.9', 'v4_0.5_calibrated'])
+    # print('create web traffic')
+    # create_cdd('web_traffic', drop_columns=['selBinom0.99', 'selBinom0.95', 'selBinom0.9', 'v4_0.5_calibrated'])
     # print('create all cdd')
-    # create_all_cdd(drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.3'])
-    # print('create overall cdd')
-    # create_cdd_overall(drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.3'])
+    # create_all_cdd(drop_columns=['v8', 'test_1.2', 'selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.5_calibrated', 'selBinomOptP', 'v4_0.5', 'v5'])
+    print('create overall cdd')
+    create_cdd_overall(drop_columns=['v8', 'test_1.2', 'selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.5_calibrated', 'selBinomOptP', 'v4_0.5', 'v5', 'v10', 'test_1.1'])
 
 if __name__ == '__main__':
     main()

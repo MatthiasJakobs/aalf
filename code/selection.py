@@ -1,8 +1,18 @@
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import f1_score
 from sklearn.model_selection import cross_val_score
 from imblearn.ensemble import BalancedRandomForestClassifier
+
+def get_last_errors(lin_preds_val, nn_preds_val, y_val, lin_preds_test, nn_preds_test, y_test):
+    last_preds_lin = np.concatenate([lin_preds_val[-1].reshape(-1), lin_preds_test[:-1].reshape(-1)])
+    last_preds_nn = np.concatenate([nn_preds_val[-1].reshape(-1), nn_preds_test[:-1].reshape(-1)])
+    y_true = np.concatenate([y_val[-1].reshape(-1), y_test[:-1].reshape(-1)])
+    lin_errors = (last_preds_lin-y_true)**2
+    nn_errors = (last_preds_nn-y_true)**2
+
+    return lin_errors, nn_errors
 
 # Select linear model p_lin percent of the time. Choose the 1-p_lin percent worst predictions and reduce via neural net prediction
 def selection_oracle_percent(y_test, lin_test_preds, ens_test_preds, p_lin):
@@ -23,10 +33,14 @@ def selection_oracle_percent(y_test, lin_test_preds, ens_test_preds, p_lin):
     return selection.astype(np.int8)
 
 
-def get_roc_dists(x_test, lin_rocs, ensemble_rocs):
+def get_roc_dists(x_test, lin_rocs, ensemble_rocs, distance='euclidean'):
 
-    lin_min_dist = np.min(np.vstack([lin_roc.euclidean_distance(x_test) for lin_roc in lin_rocs]), axis=0)
-    ensemble_min_dist = np.min(np.vstack([ensemble_roc.euclidean_distance(x_test) for ensemble_roc in ensemble_rocs]), axis=0)
+    if distance == 'euclidean':
+        lin_min_dist = np.min(np.vstack([lin_roc.euclidean_distance(x_test) for lin_roc in lin_rocs]), axis=0)
+        ensemble_min_dist = np.min(np.vstack([ensemble_roc.euclidean_distance(x_test) for ensemble_roc in ensemble_rocs]), axis=0)
+    else:
+        lin_min_dist = np.min(np.vstack([lin_roc.dtw_distance(x_test) for lin_roc in lin_rocs]), axis=0)
+        ensemble_min_dist = np.min(np.vstack([ensemble_roc.dtw_distance(x_test) for ensemble_roc in ensemble_rocs]), axis=0)
 
     return lin_min_dist, ensemble_min_dist
 
@@ -219,3 +233,197 @@ def run_v7(x_test, lin_rocs, ensemble_rocs, lin_test_preds, ensemble_test_preds)
 
     X = np.vstack([lin_test_preds, ensemble_test_preds, lin_min_dist, ensemble_min_dist]).T
     return name, model.predict(X)
+
+def run_v8(x_val, y_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, thresh=0.5):
+    name = 'v8'
+
+    # What to do if empty rocs
+    if len(ensemble_rocs) == 0:
+        # Choose linear
+        return name, np.ones((len(x_test))).astype(np.int8)
+    if len(lin_rocs) == 0:
+        # Choose complex
+        return name, np.zeros((len(x_test))).astype(np.int8)
+
+    lin_min_dist, ensemble_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
+
+    y_train = selection_oracle_percent(y_val, lin_val_preds, ens_val_preds, 0.5)
+
+    X_train = np.vstack([lin_val_preds-ens_val_preds, lin_min_dist-ensemble_min_dist]).T
+    X_train = np.concatenate([X_train, x_val], axis=1)
+
+    clf = BalancedRandomForestClassifier(n_estimators=256, replacement=True, random_state=random_state, sampling_strategy='not minority')
+    #clf = RandomForestClassifier(n_estimators=128, random_state=random_state)
+    clf.fit(X_train, y_train)
+
+    lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
+
+    X_test = np.vstack([lin_test_preds-ens_test_preds, lin_min_dist-ensemble_min_dist]).T
+    X_test = np.concatenate([X_test, x_test], axis=1)
+
+    return name, (clf.predict_proba(X_test)[:, 1] > thresh).astype(np.int8)
+
+def run_v9(x_val, y_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, thresh=0.5):
+    name = 'v9'
+
+    # What to do if empty rocs
+    if len(ensemble_rocs) == 0:
+        # Choose linear
+        return name, np.ones((len(x_test))).astype(np.int8)
+    if len(lin_rocs) == 0:
+        # Choose complex
+        return name, np.zeros((len(x_test))).astype(np.int8)
+
+    lin_min_dist, ensemble_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
+
+    y_train = selection_oracle_percent(y_val, lin_val_preds, ens_val_preds, 0.5)
+
+    X_train = np.vstack([lin_val_preds-ens_val_preds]).T
+    X_train = np.concatenate([X_train, x_val], axis=1)
+
+    clf = BalancedRandomForestClassifier(n_estimators=256, replacement=True, random_state=random_state, sampling_strategy='not minority')
+    #clf = DecisionTreeClassifier(max_depth=4, random_state=random_state)
+    clf.fit(X_train, y_train)
+
+    lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
+
+    X_test = np.vstack([lin_test_preds-ens_test_preds]).T
+    X_test = np.concatenate([X_test, x_test], axis=1)
+
+    return name, (clf.predict_proba(X_test)[:, 1] > thresh).astype(np.int8)
+
+# def run_test(x_val, y_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, thresh=0.5):
+#     name = 'test'
+
+#     # What to do if empty rocs
+#     if len(ensemble_rocs) == 0:
+#         # Choose linear
+#         return name, np.ones((len(x_test))).astype(np.int8)
+#     if len(lin_rocs) == 0:
+#         # Choose complex
+#         return name, np.zeros((len(x_test))).astype(np.int8)
+
+#     lin_min_dist, ensemble_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
+
+#     y_train = selection_oracle_percent(y_val, lin_val_preds, ens_val_preds, 0.5)
+
+#     X_train = np.vstack([lin_val_preds-ens_val_preds]).T
+#     X_train = np.concatenate([X_train, x_val], axis=1)
+
+#     clf = BalancedRandomForestClassifier(n_estimators=128, replacement=True, random_state=random_state, sampling_strategy='not minority')
+#     #clf = DecisionTreeClassifier(max_depth=4, random_state=random_state)
+#     clf.fit(X_train, y_train)
+
+#     lin_min_dist, ensemble_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
+
+#     X_test = np.vstack([lin_test_preds-ens_test_preds]).T
+#     X_test = np.concatenate([X_test, x_test], axis=1)
+
+#     return name, (clf.predict_proba(X_test)[:, 1] > thresh).astype(np.int8)
+
+# last error approx equal expected new error
+def run_test(y_val, y_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, epsilon=1):
+    # First error estimate from validation set
+    e_i = (lin_preds_val[-1]-y_val[-1])**2
+    e_c = (nn_preds_val[-1]-y_val[-1])**2
+
+    name = 'test'
+    selection = []
+    for t in range(len(y_test)):
+        if e_i == 0:
+            selection.append(1)
+        elif e_c == 0:
+            selection.append(0)
+        else:
+            if e_i / e_c <= epsilon:
+                selection.append(1)
+            else:
+                selection.append(0)
+        
+        # Decision is made, update error estimate
+        e_i = (lin_preds_test[t]-y_test[t])**2
+        e_c = (nn_preds_test[t]-y_test[t])**2
+
+    return name, np.array(selection).astype(np.int8)
+
+def run_v10(y_train, x_val, y_val, x_test, y_test, lin_train_preds, ens_train_preds, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, lin_rocs, ensemble_rocs, random_state, thresh=0.5):
+
+    name = 'v10'
+    # What to do if empty rocs
+    if len(ensemble_rocs) == 0:
+        # Choose linear
+        return name, np.ones((len(x_test))).astype(np.int8)
+    if len(lin_rocs) == 0:
+        # Choose complex
+        return name, np.zeros((len(x_test))).astype(np.int8)
+
+    # Closest rocs
+    lin_min_dist, ens_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
+
+    # Get oracle prediction
+    val_selection = selection_oracle_percent(y_val, lin_val_preds, ens_val_preds, 0.9)
+
+    # Build X
+    X_train = np.vstack([lin_val_preds-ens_val_preds, lin_min_dist-ens_min_dist]).T
+    X_train = np.concatenate([X_train, x_val], axis=1)
+
+    lin_min_dist, ens_min_dist = get_roc_dists(x_test, lin_rocs, ensemble_rocs)
+    X_test = np.vstack([lin_test_preds-ens_test_preds, lin_min_dist-ens_min_dist]).T
+    X_test = np.concatenate([X_test, x_test], axis=1)
+
+    # Last errors
+    lin_errors, nn_errors = get_last_errors(lin_train_preds, ens_train_preds, y_train, lin_val_preds, ens_val_preds, y_val)
+    train_last_errors = (lin_errors / (nn_errors+1e-4)).reshape(-1, 1)
+
+    lin_errors, nn_errors = get_last_errors(lin_val_preds, ens_val_preds, y_val, lin_test_preds, ens_test_preds, y_test)
+    test_last_errors = (lin_errors / (nn_errors+1e-4)).reshape(-1, 1)
+
+    X_train = np.concatenate([X_train, train_last_errors], axis=1)
+    X_test = np.concatenate([X_test, test_last_errors], axis=1)
+
+    # Train model(s)
+    rf_rng = np.random.RandomState(random_state)
+    one_indices = np.where(val_selection == 1)[0]
+    zero_indices = np.where(val_selection == 0)[0]
+
+    # Upsample minority
+    indices = rf_rng.choice(zero_indices, size=len(one_indices), replace=True)
+    indices = np.concatenate([indices, one_indices])
+    _x = X_train[indices]
+    _y = val_selection[indices]
+
+    clf = RandomForestClassifier(n_estimators=128, random_state=rf_rng)
+    clf.fit(_x, _y)
+
+    return name, clf.predict(X_test).astype(np.int8)
+
+def run_sebas_selection(y_test, lin_test_preds, nn_test_preds, n_i, n_c):
+    # Naive, slow version
+    name = 'sebas01'
+    selection = []
+
+    e_i = (y_test.reshape(-1) - lin_test_preds.reshape(-1))**2
+    e_c = (y_test.reshape(-1) - nn_test_preds.reshape(-1))**2
+
+    run_lin = True
+    t = 0
+    while t < len(y_test):
+        if run_lin:
+            selection.extend(n_i * [1])
+            t += n_i 
+            run_lin = False
+            continue
+        if np.mean(e_c[t-n_i:t]) < np.mean(e_i[t-n_i:t]):
+            selection.extend(n_c*[0])
+            t += n_c
+            run_lin = True
+            continue
+        else:
+            selection.append(1)
+            t += 1
+            continue
+
+    return name, np.array(selection)[:len(y_test)].astype(np.int8)
+
+
+

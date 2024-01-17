@@ -6,6 +6,7 @@ import argparse
 from joblib import Parallel, delayed
 
 from main import run_experiment
+from viz import plot_selection_percentage
 from datasets import load_dataset
 from cdd_plots import create_cdd
 
@@ -58,4 +59,6 @@ if __name__ == '__main__':
     args = vars(parser.parse_args())
 
     run_on_subset(override=args['override'])
-    create_cdd('all_small')
+    drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.5', 'v5']
+    create_cdd('all_small', drop_columns=drop_columns)
+    plot_selection_percentage('all_small', drop_columns=drop_columns)

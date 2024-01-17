@@ -75,22 +75,26 @@ def plot_rocs(roc_lin, roc_complex, save_path):
     fig.savefig('test.png')
     exit()
 
-def plot_selection_percentage(ds_name):
+def plot_selection_percentage(ds_name, drop_columns=None):
     df = pd.read_csv(f'results/{ds_name}_selection.csv')
+    if drop_columns is not None:
+        df = df.drop(columns=drop_columns)
     names = df.columns[1:]
     plt.figure()
+    plt.axhline(0.5, ls='--', alpha=0.5, color='black')
     plt.violinplot(df.iloc[:, 1:].to_numpy(), showmedians=True)
     #plt.boxplot(df.iloc[:, 1:].to_numpy())
     epsilon = 0.05
     plt.ylim(0-epsilon,1+epsilon)
     plt.xticks(ticks=np.arange(len(names))+1, labels=names.tolist(), rotation=90)
+    plt.ylabel(r'$p_{linear}$')
+    plt.title(ds_name)
     plt.tight_layout()
-    plt.savefig('test.png')
-    print(names)
+    plt.savefig(f'plots/selection_{ds_name}.png')
 
 def plot_all_selection_percentage():
     ds_names = ['web_traffic', 'london_smart_meters_nomissing', 'kdd_cup_nomissing', 'pedestrian_counts', 'weather']
-    drop_columns = ['v4_0.5_calibrated']
+    drop_columns = ['v4_0.5_calibrated', 'v4_0.5', 'v5', 'v8', 'selBinom0.9', 'selBinom0.95', 'selBinom0.99']
     width = 6
     height = len(ds_names)/2 * width
     fig, axs = plt.subplots(nrows=len(ds_names), ncols=1, sharex=True, sharey=True, figsize=(width, height))
@@ -101,6 +105,7 @@ def plot_all_selection_percentage():
         df = df.drop(columns=drop_columns, errors='ignore')
         if names is None:
             names = df.columns[1:]
+            print(names)
 
         ax = axs[row_idx]
         ax.set_title(ds_name)
@@ -117,5 +122,5 @@ def plot_all_selection_percentage():
         
     
 if __name__ == '__main__':
-    plot_all_selection_percentage()
-    plot_selection_percentage('weather')
+    #plot_all_selection_percentage()
+    plot_selection_percentage('weather', drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.5', 'v5', 'v8', 'test_1.2', 'v10'])
