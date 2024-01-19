@@ -7,6 +7,7 @@ from sktime.clustering.k_medoids import TimeSeriesKMedoids
 from tslearn.utils import to_time_series_dataset
 from tsx.model_selection import ROC_Member
 from sklearn.metrics import silhouette_score
+from selection import selection_oracle_percent
 
 def cluster_rocs(rocs):
     # Find cluster with minimal inertia
@@ -133,13 +134,17 @@ def plot_selection_performance(methods):
         for method in methods:
             ax.scatter(selections[method].mean(), errors[method].mean(), label=method if idx == 0 else '')
 
+        # Oracle baseline
+        for p in [10, 20, 30, 40, 50, 60, 70, 80, 90, 95]:
+            ax.scatter(p/100, errors[f'ErrorOracle{p}'].mean(), marker='+', c='gray', label='Oracle' if idx == 0 and p == 10 else '')
+
         ax.grid()
         ax.set_title(ds_name)
     fig.supylabel('Mean RMSE')
     fig.supxlabel('Mean Selection of Linear Model')
     fig.tight_layout()
     fig.subplots_adjust(top=0.85)
-    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=len(methods)+2)
+    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=len(methods)+3)
     fig.savefig('test.png')
         
         

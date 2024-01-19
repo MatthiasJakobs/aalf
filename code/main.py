@@ -392,7 +392,7 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     #     test_results[name] = loss_test_test
     #     selection_results[name] = np.mean(test_selection)
 
-    if 'v11' in to_run or 'v11' not in test_results.keys():
+    if 'v11' in to_run:
         name, test_selection = run_v11(x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=0.9)
         test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
         loss_test_test = rmse(test_prediction_test, y_test)
@@ -447,13 +447,14 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     # test_results[name] = loss_test_test
 
     # Selection oracle
-    name = 'ErrorOracle90'
-    test_selection = selection_oracle_percent(y_test, lin_preds_test, nn_preds_test, 0.9)
-    test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    loss_test_test = rmse(test_prediction_test, y_test)
-    np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
-    test_results[name] = loss_test_test
-    selection_results[name] = np.mean(test_selection)
+    for p in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
+        name = f'ErrorOracle{int(100*p)}'
+        test_selection = selection_oracle_percent(y_test, lin_preds_test, nn_preds_test, p)
+        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+        loss_test_test = rmse(test_prediction_test, y_test)
+        np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+        test_results[name] = loss_test_test
+        selection_results[name] = np.mean(test_selection)
 
     # name, test_selection = run_sebas_selection(y_test, lin_preds_test, nn_preds_test, 3, 3)
     # name = name + "3,3"
