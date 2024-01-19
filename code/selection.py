@@ -414,17 +414,17 @@ def run_v11(x_val, y_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, 
         return name, np.zeros((len(x_test))).astype(np.int8)
 
     # Build X
-    X_train = np.vstack([lin_val_preds, ens_val_preds]).T
+    X_train = np.vstack([lin_val_preds-ens_val_preds]).T
     X_train = np.concatenate([X_train, x_val], axis=1)
 
-    X_test = np.vstack([lin_test_preds, ens_test_preds]).T
+    X_test = np.vstack([lin_test_preds-ens_test_preds]).T
     X_test = np.concatenate([X_test, x_test], axis=1)
 
     # Train model(s)
     clf = UpsampleEnsembleClassifier(RandomForestClassifier, 9, random_state=random_state, n_estimators=128)
     clf.fit(X_train, val_selection)
 
-    return name, clf.predict(X_test).astype(np.int8)
+    return name, clf.predict(X_test, thresh=0.6).astype(np.int8)
 
 def run_sebas_selection(y_test, lin_test_preds, nn_test_preds, n_i, n_c):
     # Naive, slow version
