@@ -2,6 +2,56 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from scipy.stats import mode
+
+class DownsampleEnsembleClassifier:
+
+    def __init__(self, model_class, n_member, *args, random_state=None, **kwargs):
+        self.n_member = n_member
+        self.rng = np.random.RandomState(random_state)
+        self.estimators = [model_class(*args, random_state=self.rng, **kwargs) for _ in range(self.n_member)]
+
+    def fit(self, X, y, majority=1):
+        one_indices = np.where(y == 1)[0]
+        zero_indices = np.where(y == 0)[0]
+
+        # Downsample majority
+        for i in range(self.n_member):
+            indices = self.rng.choice([zero_indices, one_indices][majority], size=len([zero_indices, one_indices][1-majority]), replace=False)
+            indices = np.concatenate([indices, [zero_indices, one_indices][1-majority]])
+            _x = X[indices]
+            _y = y[indices]
+            self.estimators[i].fit(_x, _y)
+
+    def predict(self, X):
+        preds = np.vstack([self.estimators[i].predict(X) for i in range(self.n_member)])
+        return mode(preds, keepdims=True)[0].squeeze()
+
+class UpsampleEnsembleClassifier:
+
+    def __init__(self, model_class, n_member, *args, random_state=None, **kwargs):
+        self.n_member = n_member
+        self.rng = np.random.RandomState(random_state)
+        self.estimators = [model_class(*args, random_state=self.rng, **kwargs) for _ in range(self.n_member)]
+
+    def fit(self, X, y, minority=0):
+        one_indices = np.where(y == 1)[0]
+        zero_indices = np.where(y == 0)[0]
+
+        # Upsample minority
+        for i in range(self.n_member):
+            # Upsample minority
+            indices = self.rng.choice([zero_indices, one_indices][minority], size=len([zero_indices, one_indices][1-minority]), replace=True)
+            indices = np.concatenate([indices, [zero_indices, one_indices][1-minority]])
+            _x = X[indices]
+            _y = y[indices]
+            self.estimators[i].fit(_x, _y)
+
+    def predict(self, X):
+        preds = np.vstack([self.estimators[i].predict(X) for i in range(self.n_member)])
+        return mode(preds, keepdims=True)[0].squeeze()
+
+
 # Scikit-learn ensemble with median prediction
 class Ensemble:
 

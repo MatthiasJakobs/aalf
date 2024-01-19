@@ -4,6 +4,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import f1_score
 from sklearn.model_selection import cross_val_score
 from imblearn.ensemble import BalancedRandomForestClassifier
+from models import DownsampleEnsembleClassifier, UpsampleEnsembleClassifier
 
 def get_last_errors(lin_preds_val, nn_preds_val, y_val, lin_preds_test, nn_preds_test, y_test):
     last_preds_lin = np.concatenate([lin_preds_val[-1].reshape(-1), lin_preds_test[:-1].reshape(-1)])
@@ -357,13 +358,12 @@ def run_v10(y_train, x_val, y_val, x_test, y_test, lin_train_preds, ens_train_pr
         # Choose complex
         return name, np.zeros((len(x_test))).astype(np.int8)
 
-    # Closest rocs
-    lin_min_dist, ens_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
 
     # Get oracle prediction
     val_selection = selection_oracle_percent(y_val, lin_val_preds, ens_val_preds, 0.9)
 
     # Build X
+    lin_min_dist, ens_min_dist = get_roc_dists(x_val, lin_rocs, ensemble_rocs)
     X_train = np.vstack([lin_val_preds-ens_val_preds, lin_min_dist-ens_min_dist]).T
     X_train = np.concatenate([X_train, x_val], axis=1)
 
@@ -378,10 +378,11 @@ def run_v10(y_train, x_val, y_val, x_test, y_test, lin_train_preds, ens_train_pr
     lin_errors, nn_errors = get_last_errors(lin_val_preds, ens_val_preds, y_val, lin_test_preds, ens_test_preds, y_test)
     test_last_errors = (lin_errors / (nn_errors+1e-4)).reshape(-1, 1)
 
-    X_train = np.concatenate([X_train, train_last_errors], axis=1)
-    X_test = np.concatenate([X_test, test_last_errors], axis=1)
+    # X_train = np.concatenate([X_train, train_last_errors], axis=1)
+    # X_test = np.concatenate([X_test, test_last_errors], axis=1)
 
     # Train model(s)
+    '''
     rf_rng = np.random.RandomState(random_state)
     one_indices = np.where(val_selection == 1)[0]
     zero_indices = np.where(val_selection == 0)[0]
@@ -394,6 +395,34 @@ def run_v10(y_train, x_val, y_val, x_test, y_test, lin_train_preds, ens_train_pr
 
     clf = RandomForestClassifier(n_estimators=128, random_state=rf_rng)
     clf.fit(_x, _y)
+    '''
+    clf = DownsampleEnsembleClassifier(RandomForestClassifier, 10, random_state=random_state, n_estimators=128)
+    clf.fit(X_train, val_selection)
+
+    return name, clf.predict(X_test).astype(np.int8)
+
+def run_v11(x_val, y_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, random_state, p=0.9):
+
+    name = f'v11_{p}'
+
+    # Get oracle prediction
+    val_selection = selection_oracle_percent(y_val, lin_val_preds, ens_val_preds, p)
+    n_zeros = (val_selection == 0).sum()
+    if n_zeros == 0:
+        return name, np.ones((len(x_test))).astype(np.int8)
+    if n_zeros == len(val_selection):
+        return name, np.zeros((len(x_test))).astype(np.int8)
+
+    # Build X
+    X_train = np.vstack([lin_val_preds, ens_val_preds]).T
+    X_train = np.concatenate([X_train, x_val], axis=1)
+
+    X_test = np.vstack([lin_test_preds, ens_test_preds]).T
+    X_test = np.concatenate([X_test, x_test], axis=1)
+
+    # Train model(s)
+    clf = UpsampleEnsembleClassifier(RandomForestClassifier, 9, random_state=random_state, n_estimators=128)
+    clf.fit(X_train, val_selection)
 
     return name, clf.predict(X_test).astype(np.int8)
 
