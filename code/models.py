@@ -23,8 +23,8 @@ class DownsampleEnsembleClassifier:
             _y = y[indices]
             self.estimators[i].fit(_x, _y)
 
-    def predict(self, X):
-        preds = np.vstack([self.estimators[i].predict(X) for i in range(self.n_member)])
+    def predict(self, X, thresh=0.5):
+        preds = np.vstack([(self.estimators[i].predict_proba(X)[:, 1] >= thresh).astype(np.int8) for i in range(self.n_member)])
         return mode(preds, keepdims=True)[0].squeeze()
 
 class UpsampleEnsembleClassifier:
