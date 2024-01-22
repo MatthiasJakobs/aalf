@@ -8,6 +8,8 @@ from tsx.datasets import windowing
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from itertools import product
 from cdd_plots import DATASET_DICT_SMALL
+from os import system, remove
+from os.path import basename, exists, dirname, join
 
 def load_models(ds_name, ds_index):
     with open(f'models/{ds_name}/{ds_index}/linear.pickle', 'rb') as f:
@@ -57,9 +59,7 @@ def preprocess_data(X, L, H):
 
     return (x_train, y_train), (x_val, y_val), (x_test, y_test)
 
-def main():
-    ds_names = ['pedestrian_counts', 'london_smart_meters_nomissing', 'web_traffic', 'kdd_cup_nomissing', 'weather' ]
-    methods = ['lin', 'nn', 'v9', 'test_1.0', 'test_1.1', 'v10']
+def main(ds_names, methods):
     ds_fraction = 0.3
     rng = np.random.RandomState(20240103)
 
@@ -124,11 +124,8 @@ def make_pretty(styler, to_highlight, save_path, transpose=False):
     return styler
 
 
-def plot_table(df, save_path, transpose=False):
+def plot_table(df, save_path, methods, transpose=False):
 
-    #methods = ['lin', 'nn', 'v8', 'v9']
-    methods = ['lin', 'nn', 'v9', 'test_1.0', 'test_1.1', 'test_1.2']
-    #methods = ['lin', 'nn', 'v4', 'v5', 'v8', 'v9']
     metrics = ['MSE', 'MAE']
     
     to_highlight = [list(product(methods, [metric])) for metric in metrics]
@@ -137,10 +134,18 @@ def plot_table(df, save_path, transpose=False):
     df.style.pipe(make_pretty, save_path=save_path, to_highlight=to_highlight, transpose=transpose)
 
 if __name__ == '__main__':
-    from os.path import exists
-    if not exists('eval.pickle'):
-        results = main()
-        results.to_pickle('eval.pickle')
+
+    methods = ['lin', 'nn', 'v11_0.7', 'v11_0.8', 'v11_0.9']
+    ds_names = ['pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing', 'weather' ]
+
+    EVAL_PATH = 'results/eval.pickle'
+    TABLE_PATH = 'results/table.tex'
+
+    if not exists(EVAL_PATH):
+        print()
+        results = main(ds_names, methods)
+        results.to_pickle(EVAL_PATH)
     else:
-        results = pd.read_pickle('eval.pickle')
-    plot_table(results, 'table_test/table.tex', transpose=True)
+        results = pd.read_pickle(EVAL_PATH)
+
+    plot_table(results, TABLE_PATH, methods, transpose=False)
