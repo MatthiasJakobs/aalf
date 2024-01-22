@@ -249,15 +249,15 @@ def create_all_cdd(treatment_names):
             "cycle list": ",".join([ # define the markers for treatments
                 "{color1,mark=*}",
                 "{color2,mark=*}",
-                "{color3,mark=*}",
-                "{color4,mark=*}",
+                # "{color3,mark=*}",
+                # "{color4,mark=*}",
                 # "{color4,mark=*}",
                 # "{color5,mark=*}",
                 "{color1,mark=square}",
                 "{color2,mark=square}",
                 "{color3,mark=square}",
-                "{color1,mark=triangle,semithick}",
-                "{color2,mark=triangle,semithick}",
+                # "{color1,mark=triangle,semithick}",
+                # "{color2,mark=triangle,semithick}",
                 # "{color6,mark=triangle,semithick}",
                 # "{color3,mark=triangle,semithick}",
                 # "{color4,mark=triangle,semithick}",
@@ -335,7 +335,7 @@ def main():
     # print('create web traffic')
     # create_cdd('web_traffic', drop_columns=['selBinom0.99', 'selBinom0.95', 'selBinom0.9', 'v4_0.5_calibrated'])
     print('create all cdd')
-    create_all_cdd(treatment_names=['linear', 'nn', 'selOpt', 'ErrorOracle90', 'v9', 'v10', 'v11', 'test_1.0'])
+    create_all_cdd(treatment_names=['linear', 'nn', 'v11_0.9', 'v11_0.8', 'v11_0.7'])
     # print('create overall cdd')
     # create_cdd_overall(drop_columns=['sebas018,2', 'sebas013,3', 'v8', 'test_1.2', 'selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.5_calibrated', 'selBinomOptP', 'v4_0.5', 'v5', 'v10', 'test_1.1'])
 

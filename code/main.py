@@ -90,7 +90,9 @@ def compute_rocs(x, y, explanations, errors, threshold=0):
 def main(to_run):
     L = 10
 
-    ds_names = ['kdd_cup_nomissing', 'pedestrian_counts', 'weather', 'web_traffic']
+    #ds_names = ['kdd_cup_nomissing', 'pedestrian_counts', 'weather', 'web_traffic']
+    ds_names = ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing']
+    #ds_names = ['london_smart_meters_nomissing']
 
     if to_run is None:
         to_run = []
@@ -393,21 +395,21 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     #     selection_results[name] = np.mean(test_selection)
 
     if 'v11' in to_run:
-        name, test_selection = run_v11(x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=0.9)
+        name, test_selection = run_v11(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=0.9)
         test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
         loss_test_test = rmse(test_prediction_test, y_test)
         np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
         test_results[name] = loss_test_test
         selection_results[name] = np.mean(test_selection)
 
-        name, test_selection = run_v11(x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=0.8)
+        name, test_selection = run_v11(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=0.8)
         test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
         loss_test_test = rmse(test_prediction_test, y_test)
         np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
         test_results[name] = loss_test_test
         selection_results[name] = np.mean(test_selection)
 
-        name, test_selection = run_v11(x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=0.7)
+        name, test_selection = run_v11(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=0.7)
         test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
         loss_test_test = rmse(test_prediction_test, y_test)
         np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))

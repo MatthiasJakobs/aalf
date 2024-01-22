@@ -401,7 +401,7 @@ def run_v10(y_train, x_val, y_val, x_test, y_test, lin_train_preds, ens_train_pr
 
     return name, clf.predict(X_test).astype(np.int8)
 
-def run_v11(x_val, y_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, random_state, p=0.9):
+def run_v11(lin_train_preds, ens_train_preds, y_train, y_test, x_val, y_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, random_state, p=0.9):
 
     name = f'v11_{p}'
 
@@ -413,11 +413,18 @@ def run_v11(x_val, y_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, 
     if n_zeros == len(val_selection):
         return name, np.zeros((len(x_test))).astype(np.int8)
 
+    # Last errors
+    lin_errors, nn_errors = get_last_errors(lin_train_preds, ens_train_preds, y_train, lin_val_preds, ens_val_preds, y_val)
+    train_last_errors = (lin_errors - nn_errors)
+
+    lin_errors, nn_errors = get_last_errors(lin_val_preds, ens_val_preds, y_val, lin_test_preds, ens_test_preds, y_test)
+    test_last_errors = (lin_errors - nn_errors)
+
     # Build X
-    X_train = np.vstack([lin_val_preds-ens_val_preds]).T
+    X_train = np.vstack([lin_val_preds-ens_val_preds, train_last_errors]).T
     X_train = np.concatenate([X_train, x_val], axis=1)
 
-    X_test = np.vstack([lin_test_preds-ens_test_preds]).T
+    X_test = np.vstack([lin_test_preds-ens_test_preds, test_last_errors]).T
     X_test = np.concatenate([X_test, x_test], axis=1)
 
     # Train model(s)

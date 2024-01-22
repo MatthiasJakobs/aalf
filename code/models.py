@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 
 from scipy.stats import mode
+from sklearn.preprocessing import StandardScaler
 
 class DownsampleEnsembleClassifier:
 

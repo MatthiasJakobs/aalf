@@ -8,6 +8,7 @@ from tslearn.utils import to_time_series_dataset
 from tsx.model_selection import ROC_Member
 from sklearn.metrics import silhouette_score
 from selection import selection_oracle_percent
+from cdd_plots import TREATMENT_DICT, DATASET_DICT
 
 def cluster_rocs(rocs):
     # Find cluster with minimal inertia
@@ -129,8 +130,13 @@ def plot_selection_performance(methods):
         selections = pd.read_csv(f'results/{ds_name}_selection.csv')
 
         ax = axs.ravel()[idx]
+
+        # Draw horizontal line where NN error is 
+        ax.axhline(errors['nn'].mean(), linestyle='--', color='black', alpha=0.3)
+
         ax.scatter(0, errors['nn'].mean(), label='NN' if idx == 0 else '')
         ax.scatter(1, errors['linear'].mean(), label='Linear' if idx == 0 else '')
+
         for method in methods:
             ax.scatter(selections[method].mean(), errors[method].mean(), label=method if idx == 0 else '')
 
@@ -139,13 +145,13 @@ def plot_selection_performance(methods):
             ax.scatter(p/100, errors[f'ErrorOracle{p}'].mean(), marker='+', c='gray', label='Oracle' if idx == 0 and p == 10 else '')
 
         ax.grid()
-        ax.set_title(ds_name)
+        ax.set_title(DATASET_DICT.get(ds_name, ds_name))
     fig.supylabel('Mean RMSE')
     fig.supxlabel('Mean Selection of Linear Model')
     fig.tight_layout()
-    fig.subplots_adjust(top=0.85)
-    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=len(methods)+3)
-    fig.savefig('test.png')
+    fig.subplots_adjust(top=0.80)
+    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3)//2)
+    fig.savefig('plots/scatter.png')
         
         
     
