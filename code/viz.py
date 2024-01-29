@@ -126,7 +126,6 @@ def _plot_single_selection_performance(ax, idx, ds_name, methods):
     errors = pd.read_csv(f'results/{ds_name}_test.csv')
     selections = pd.read_csv(f'results/{ds_name}_selection.csv')
 
-
     # Draw horizontal line where NN error is 
     ax.axhline(errors['nn'].mean(), linestyle='--', color='black', alpha=0.3)
 
@@ -134,11 +133,21 @@ def _plot_single_selection_performance(ax, idx, ds_name, methods):
     ax.scatter(1, errors['linear'].mean(), label='Linear' if idx == 0 else '')
 
     for method in methods:
-        ax.scatter(selections[method].mean(), errors[method].mean(), label=method if idx == 0 else '')
+        if method == 'v11':
+            ps = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+            sel = [selections[f'v11_{p}'].mean() for p in ps]
+            err = [errors[f'v11_{p}'].mean() for p in ps]
+            ax.plot(sel, err, c='green', alpha=.7)
+            ax.scatter(sel, err, c='green', label='v11' if idx == 0 else '')
+        else:
+            ax.scatter(selections[method].mean(), errors[method].mean(), label=method if idx == 0 else '')
 
     # Oracle baseline
-    for p in [10, 20, 30, 40, 50, 60, 70, 80, 90, 95]:
-        ax.scatter(p/100, errors[f'ErrorOracle{p}'].mean(), marker='+', c='gray', label='Oracle' if idx == 0 and p == 10 else '')
+    ps = [10, 20, 30, 40, 50, 60, 70, 80, 90]
+    sel = [selections[f'ErrorOracle{p}'].mean() for p in ps]
+    err = [errors[f'ErrorOracle{p}'].mean() for p in ps]
+    ax.plot(sel, err, c='gray', alpha=.7)
+    ax.scatter(sel, err, marker='+', c='gray', label='Oracle' if idx == 0 else '')
 
     ax.grid()
     ax.set_title(DATASET_DICT.get(ds_name, ds_name))
@@ -164,7 +173,7 @@ def plot_selection_performance(methods):
     fig.supxlabel('Mean Selection of Linear Model')
     fig.tight_layout()
     fig.subplots_adjust(top=0.80)
-    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3)//2)
+    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3))
     fig.savefig('plots/scatter.png')
         
         
@@ -173,5 +182,5 @@ if __name__ == '__main__':
     #plot_all_selection_percentage()
     #plot_selection_percentage('weather', drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.5', 'v5', 'v8', 'test_1.2', 'v10'])
     #plot_selection_performance(['v9', 'v10', 'v11', 'test_1.0'])
-    #plot_selection_percentage_single('london_smart_meters_nomissing', ['v11_0.9', 'v11_0.8', 'v11_0.7'])
-    plot_selection_performance(['v11_0.9', 'v11_0.8', 'v11_0.7'])
+    #plot_selection_percentage_single('web_traffic', ['v11_0.7', 'v10_0.7'])
+    plot_selection_performance(['v11'])

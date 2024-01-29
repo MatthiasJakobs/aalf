@@ -4,6 +4,29 @@ import numpy as np
 
 from scipy.stats import mode
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+
+class ThreeSubsetEnsemble:
+
+    def __init__(self, alpha, random_state=None):
+        self.alpha = alpha
+        self.rng = np.random.RandomState(random_state)
+
+    def _get_epsilon(self, p_one, N):
+        r = min(p_one / (1-p_one), (1-p_one)/p_one)
+        expr = np.exp(((-self.alpha**2 * (N/2)) / (r + self.alpha * 1/3)) + np.log(2))
+        return r, expr
+
+    def fit(self, X, y):
+        T = 1
+
+        # Split data initial
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.4, random_state=self.rng)
+
+        emp_one = np.mean(y_val)
+
+
+
 
 class DownsampleEnsembleClassifier:
 
