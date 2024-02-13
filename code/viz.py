@@ -163,15 +163,15 @@ def plot_all_selection_percentage():
     fig.tight_layout()
     fig.savefig('test_all.png')
 
-def _plot_single_selection_performance(ax, idx, ds_name, methods, s=16):
+def _plot_single_selection_performance(ax, idx, ds_name, methods, s=12):
     errors = pd.read_csv(f'results/{ds_name}_test.csv')
     selections = pd.read_csv(f'results/{ds_name}_selection.csv')
 
     # Draw horizontal line where NN error is 
-    ax.axhline(errors['nn'].mean(), linestyle='--', color='black', alpha=0.3)
+    ax.axhline(errors['nn'].mean(), linestyle='--', linewidth=1, color='black', alpha=0.3, zorder=0)
 
-    ax.scatter(0, errors['nn'].mean(), s=s, label='NN' if idx == 0 else '')
-    ax.scatter(1, errors['linear'].mean(), s=s, label='Linear' if idx == 0 else '')
+    ax.scatter(0, errors['nn'].mean(), s=s, label='NN' if idx == 0 else '', zorder=5)
+    ax.scatter(1, errors['linear'].mean(), s=s, label='Linear' if idx == 0 else '', zorder=5)
 
     for method in methods:
         label = TREATMENT_DICT.get(method, method)
@@ -180,18 +180,16 @@ def _plot_single_selection_performance(ax, idx, ds_name, methods, s=16):
             ps = [0.5, 0.6, 0.7, 0.8, 0.9]
             sel = [selections[f'v12_{p}'].mean() for p in ps]
             err = [errors[f'v12_{p}'].mean() for p in ps]
-            ax.plot(sel, err, c=color, alpha=.7)
-            ax.scatter(sel, err, c=color, s=s, label=label if idx == 0 else '')
+            ax.plot(sel, err, c=color, alpha=.7, zorder=5)
+            ax.scatter(sel, err, c=color, s=s, label=label if idx == 0 else '', zorder=5)
             continue
-        # else:
-        #     ax.scatter(selections[method].mean(), errors[method].mean(), label=method if idx == 0 else '')
 
         # Try all other methods
         try:
             sel = selections[method].mean()
             err = errors[method].mean()
-            ax.plot(sel, err, alpha=.7)
-            ax.scatter(sel, err, s=s, marker='*', label=label if idx == 0 else '')
+            ax.plot(sel, err, alpha=.7, zorder=5)
+            ax.scatter(sel, err, s=s+5, marker='*', label=label if idx == 0 else '', zorder=5)
         except KeyError:
             print('Method', method, 'not in results, skipping')
             continue
@@ -201,10 +199,10 @@ def _plot_single_selection_performance(ax, idx, ds_name, methods, s=16):
     sel = [selections[f'NewOracle{p}'].mean() for p in ps]
     err = [errors[f'NewOracle{p}'].mean() for p in ps]
     color = 'C7'
-    ax.plot(sel, err, c=color, alpha=.7)
-    ax.scatter(sel, err, marker='+', s=s, c=color, label='Oracle' if idx == 0 else '')
+    ax.plot(sel, err, c=color, alpha=.7, zorder=5)
+    ax.scatter(sel, err, marker='+', s=s+5, c=color, label='Oracle' if idx == 0 else '', zorder=5)
 
-    ax.grid()
+    ax.grid(alpha=0.5, zorder=0)
     ax.set_title(DATASET_DICT.get(ds_name, ds_name))
     return ax
 
@@ -224,10 +222,10 @@ def plot_selection_performance(methods):
     for idx, ds_name in enumerate(ds_names):
         ax = axs.ravel()[idx]
         ax = _plot_single_selection_performance(ax, idx, ds_name, methods)
-    fig.supylabel('Mean RMSE')
-    fig.supxlabel('Mean Selection of Linear Model')
+    fig.supylabel(r'Mean RMSE $\downarrow$')
+    fig.supxlabel(r'Mean Selection of Linear Model $\uparrow$')
     fig.tight_layout()
-    fig.subplots_adjust(top=0.80)
+    fig.subplots_adjust(top=0.78)
     fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3)//2)
     fig.savefig('plots/scatter.png')
     fig.savefig('plots/scatter.pdf')
