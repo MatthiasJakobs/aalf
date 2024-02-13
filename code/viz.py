@@ -170,23 +170,24 @@ def _plot_single_selection_performance(ax, idx, ds_name, methods, s=12):
     # Draw horizontal line where NN error is 
     ax.axhline(errors['nn'].mean(), linestyle='--', linewidth=1, color='black', alpha=0.3, zorder=0)
 
-    ax.scatter(0, errors['nn'].mean(), s=s, label='NN' if idx == 0 else '', zorder=5)
-    ax.scatter(1, errors['linear'].mean(), s=s, label='Linear' if idx == 0 else '', zorder=5)
+    ax.scatter(1, errors['nn'].mean(), s=s, label=r'$f_c$' if idx == 0 else '', zorder=5)
+    ax.scatter(0, errors['linear'].mean(), s=s, label=r'$f_i$' if idx == 0 else '', zorder=5)
 
     for method in methods:
         label = TREATMENT_DICT.get(method, method)
         if method == 'v12':
             color = 'C6'
             ps = [0.5, 0.6, 0.7, 0.8, 0.9]
-            sel = [selections[f'v12_{p}'].mean() for p in ps]
+            sel = [1-selections[f'v12_{p}'].mean() for p in ps]
             err = [errors[f'v12_{p}'].mean() for p in ps]
+
             ax.plot(sel, err, c=color, alpha=.7, zorder=5)
             ax.scatter(sel, err, c=color, s=s, label=label if idx == 0 else '', zorder=5)
             continue
 
         # Try all other methods
         try:
-            sel = selections[method].mean()
+            sel = 1-selections[method].mean()
             err = errors[method].mean()
             ax.plot(sel, err, alpha=.7, zorder=5)
             ax.scatter(sel, err, s=s+5, marker='*', label=label if idx == 0 else '', zorder=5)
@@ -196,7 +197,7 @@ def _plot_single_selection_performance(ax, idx, ds_name, methods, s=12):
 
 
     ps = [50, 60, 70, 80, 90]
-    sel = [selections[f'NewOracle{p}'].mean() for p in ps]
+    sel = [1-selections[f'NewOracle{p}'].mean() for p in ps]
     err = [errors[f'NewOracle{p}'].mean() for p in ps]
     color = 'C7'
     ax.plot(sel, err, c=color, alpha=.7, zorder=5)
@@ -209,8 +210,8 @@ def _plot_single_selection_performance(ax, idx, ds_name, methods, s=12):
 def plot_selection_percentage_single(ds_name, methods):
     fig, ax = plt.subplots(1,1, sharex=True)
     ax = _plot_single_selection_performance(ax, 0, ds_name, methods)
-    fig.supylabel('Mean RMSE')
-    fig.supxlabel('Mean Selection of Linear Model')
+    fig.supylabel(r'Mean RMSE ($\downarrow$)')
+    fig.supxlabel(r'Mean Selection of $f_c$ in percent ($\downarrow$)')
     fig.tight_layout()
     fig.subplots_adjust(top=0.80)
     fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3)//2)
@@ -222,8 +223,8 @@ def plot_selection_performance(methods):
     for idx, ds_name in enumerate(ds_names):
         ax = axs.ravel()[idx]
         ax = _plot_single_selection_performance(ax, idx, ds_name, methods)
-    fig.supylabel(r'Mean RMSE $\downarrow$')
-    fig.supxlabel(r'Mean Selection of Linear Model $\uparrow$')
+    fig.supylabel(r'Mean RMSE ($\downarrow$)')
+    fig.supxlabel(r'Mean Selection of $f_c$ in percent ($\downarrow$)')
     fig.tight_layout()
     fig.subplots_adjust(top=0.78)
     fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3)//2)
