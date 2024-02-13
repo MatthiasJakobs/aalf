@@ -6,69 +6,18 @@ import pickle
 from tsx.datasets import windowing
 from seedpy import fixedseed
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
 from sklearn.neural_network import MLPRegressor
 from seedpy import fixedseed
 from os import makedirs
 from joblib import Parallel, delayed
 from os.path import exists
+from tsx.model_selection import ADE, DETS, KNNRoC, OMS_ROC
 
-from selection import selection_oracle_percent, run_v11
+from selection import selection_oracle_percent, run_v11, run_v12, oracle
 from datasets import load_dataset
-from tsx.model_selection import ROC_Member
-from tsx.models.forecaster import split_zero
-
-class MedianPredictionEnsemble:
-
-    def __init__(self, estimators):
-        self.estimators = estimators
-
-    @classmethod
-    def load_model(cls, ds_name, ds_index, n=10):
-        estimators = []
-        for i in range(n):
-            with open(f'models/{ds_name}/{ds_index}/nns/{i}.pickle', 'rb') as f:
-                estimators.append(pickle.load(f))
-
-        return cls(estimators)
-
-    def save_model(self, ds_name, ds_index):
-        makedirs(f'models/{ds_name}/{ds_index}/nns/', exist_ok=True)
-        for idx, estimator in enumerate(self.estimators):
-            with open(f'models/{ds_name}/{ds_index}/nns/{idx}.pickle', 'wb+') as f:
-                pickle.dump(estimator, f)
-
-
-    def fit(self, *args, **kwargs):
-        for estimator in self.estimators:
-            estimator.fit(*args, **kwargs)
-
-    def predict(self, X):
-        preds = []
-        for estimator in self.estimators:
-            preds.append(estimator.predict(X).reshape(-1, 1))
-        
-        return np.median(np.concatenate(preds, axis=-1), axis=-1).squeeze()
-
-
-def rmse(a, b):
-    return mean_squared_error(a, b, squared=False)
-
-def compute_rocs(x, y, explanations, errors, threshold=0):
-    # Threshold and invert explanations 
-    explanations =  explanations / explanations.sum(axis=1).reshape(-1, 1)
-    explanations = -explanations * ((-explanations) > threshold)
-
-    rocs = []
-    if len(x) == 0:
-        return rocs
-    for i, e in enumerate(explanations):
-        splits = split_zero(e, min_size=3)
-        for (f, t) in splits:
-            r = ROC_Member(x[i], y[i], np.arange(t-f+1)+f, errors[i])
-            rocs.append(r)
-
-    return rocs
+from models import MedianPredictionEnsemble
+from evaluation import load_models, preprocess_data
+from utils import rmse
 
 def main(to_run):
     L = 10
@@ -94,90 +43,69 @@ def main(to_run):
         print(ds_name, 'n_series', len(indices))
 
         # Load previous results (if available), otherwise create empty
-        if exists(f'results/{ds_name}_test.csv') and exists(f'results/{ds_name}_selection.csv'):
+        if exists(f'results/{ds_name}_test.csv'):
             test_results = pd.read_csv(f'results/{ds_name}_test.csv')
             test_results = test_results.set_index('dataset_names')
             test_results = test_results.T.to_dict()
+        else:
+            test_results = [{} for _ in range(len(X))]
+
+        if exists(f'results/{ds_name}_selection.csv'):
             test_selection = pd.read_csv(f'results/{ds_name}_selection.csv')
             test_selection = test_selection.set_index('dataset_names')
             test_selection = test_selection.T.to_dict()
         else:
-            test_results = [{} for _ in range(len(X))]
             test_selection = [{} for _ in range(len(X))]
+
+        if exists(f'results/{ds_name}_gfi.csv'):
+            test_gfi = pd.read_csv(f'results/{ds_name}_gfi.csv')
+            test_gfi = test_gfi.set_index('dataset_names')
+            test_gfi = test_gfi.T.to_dict()
+        else:
+            test_gfi = [{} for _ in range(len(X))]
 
         print('To run', to_run)
 
-        # for ds_index in indices:
-        #     run_experiment(ds_name, ds_index, X[ds_index], L, horizons[ds_index], test_results[ds_index], test_selection[ds_index], lr=lr, max_iter_nn=max_epochs, to_run=to_run)
+        # for ds_index in [454]:
+        #     print(ds_index)
+        #     run_experiment(ds_name, ds_index, X[ds_index], L, horizons[ds_index], test_results[ds_index], test_selection[ds_index], test_gfi[ds_index], lr=lr, max_iter_nn=max_epochs, to_run=to_run)
         # exit()
 
-        log_test, log_selection = zip(*Parallel(n_jobs=-1, backend='loky')(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, horizons[ds_index], test_results[ds_index], test_selection[ds_index], lr=lr, max_iter_nn=max_epochs, to_run=to_run) for ds_index in tqdm.tqdm(indices)))
+        log_test, log_selection, log_gfi = zip(*Parallel(n_jobs=-1, backend='loky')(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, horizons[ds_index], test_results[ds_index], test_selection[ds_index], test_gfi[ds_index], lr=lr, max_iter_nn=max_epochs, to_run=to_run) for ds_index in tqdm.tqdm(indices)))
 
         log_test = pd.DataFrame(list(log_test))
         log_test = log_test.set_index('dataset_names')
         log_test.to_csv(f'results/{ds_name}_test.csv')
+
         log_selection = pd.DataFrame(list(log_selection))
         log_selection = log_selection.set_index('dataset_names')
         log_selection.to_csv(f'results/{ds_name}_selection.csv')
 
-def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, lr=1e-3, max_iter_nn=500, to_run=None):
+        log_gfi = pd.DataFrame(list(log_gfi))
+        log_gfi = log_gfi.set_index('dataset_names')
+        log_gfi.to_csv(f'results/{ds_name}_gfi.csv')
+
+def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, gfi_results, lr=1e-3, max_iter_nn=500, to_run=None):
     makedirs(f'models/{ds_name}/{ds_index}', exist_ok=True)
 
     test_results['dataset_names'] = ds_index
     selection_results['dataset_names'] = ds_index
+    gfi_results['dataset_names'] = ds_index
 
-    # Split and normalize data
-    end_train = int(len(X) * 0.5)
-    end_val = end_train + int(len(X) * 0.25)
-    X_train = X[:end_train]
-    X_val = X[end_train:end_val]
-    X_test = X[end_val:]
+    (x_train, y_train), (x_val, y_val), (x_test, y_test) = preprocess_data(X, L, H)
 
-    mu = np.mean(X_train)
-    std = np.std(X_train)
+    if (x_train.reshape(-1)[0] == x_train).all() or (x_val.reshape(-1)[0] == x_val).all():
+        print('to remove', ds_name, ds_index)
+        return test_results, selection_results, gfi_results
 
-    X = (X - mu) / std
-
-    X_train = X[:end_train]
-    X_val = X[end_train:end_val]
-    X_test = X[end_val:]
-
-    # Instead of forecasting t+1, forecast t+j
-    x_train, y_train = windowing(X_train, L=L, H=H)
-    x_val, y_val = windowing(X_val, L=L, H=H)
-    x_test, y_test = windowing(X_test, L=L, H=H)
-    if len(y_train.shape) == 1:
-        y_train = y_train.reshape(-1, 1)
-    if len(y_val.shape) == 1:
-        y_val = y_val.reshape(-1, 1)
-    if len(y_test.shape) == 1:
-        y_test = y_test.reshape(-1, 1)
-    y_train = y_train[..., -1:]
-    y_val = y_val[..., -1:]
-    y_test = y_test[..., -1:]
-
-    x_train = x_train.astype(np.float32)
-    x_val = x_val.astype(np.float32)
-    x_test = x_test.astype(np.float32)
-    y_train = y_train.astype(np.float32)
-    y_val = y_val.astype(np.float32)
-    y_test = y_test.astype(np.float32)
-
-    # Train base models
-    try:
-        with open(f'models/{ds_name}/{ds_index}/linear.pickle', 'rb') as f:
-            f_i = pickle.load(f)
-    except Exception:
+    if exists(f'models/{ds_name}/{ds_index}/linear.pickle') and exists(f'models/{ds_name}/{ds_index}/nns/0.pickle'):
+        f_i, f_c = load_models(ds_name, ds_index)
+    else:
         f_i = LinearRegression()
         f_i.fit(x_train, y_train)
         with open(f'models/{ds_name}/{ds_index}/linear.pickle', 'wb') as f:
             pickle.dump(f_i, f)
 
-    # Neural net
-    try:
-        f_c = MedianPredictionEnsemble.load_model(ds_name, ds_index)
-    except Exception:
-        #print(f'retrain nns for {ds_name}/{ds_index}')
         with fixedseed(np, 20231103):
             f_c = MedianPredictionEnsemble([MLPRegressor((28,), learning_rate_init=lr, max_iter=max_iter_nn) for _ in range(10)])
             f_c.fit(x_train, y_train.squeeze())
@@ -232,7 +160,7 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     # - Model selection
 
     if 'v11' in to_run:
-        for p in [0.1,  0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
+        for p in [0.5, 0.6, 0.7, 0.8, 0.9]:
             name, test_selection = run_v11(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=p)
             test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
             loss_test_test = rmse(test_prediction_test, y_test)
@@ -240,17 +168,91 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
             test_results[name] = loss_test_test
             selection_results[name] = np.mean(test_selection)
 
-    # Selection oracle
-    for p in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
-        name = f'ErrorOracle{int(100*p)}'
-        test_selection = selection_oracle_percent(y_test, lin_preds_test, nn_preds_test, p)
+    if 'v12' in to_run:
+        for p in [0.5, 0.6, 0.7, 0.8, 0.9]:
+            name, test_selection, gfi = run_v12(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=p)
+            if p == 0.9 and gfi is not None:
+                for feat_idx in range(12):
+                    gfi_results[feat_idx] = gfi[feat_idx]
+            test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+            loss_test_test = rmse(test_prediction_test, y_test)
+            np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+            test_results[name] = loss_test_test
+            selection_results[name] = np.mean(test_selection)
+
+    if 'baselines' in to_run:
+        name = 'ade'
+        ade = ADE(20240212+ds_index)
+        try:
+            _, test_selection = ade.run(x_val, y_val.squeeze(), np.vstack([nn_preds_val, lin_preds_val]), x_test, y_test.squeeze(), np.vstack([nn_preds_test, lin_preds_test]), only_best=True, _omega=1)
+        except Exception:
+            print('ERROR ade', ds_index)
+            exit()
         test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
         loss_test_test = rmse(test_prediction_test, y_test)
         np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
         test_results[name] = loss_test_test
         selection_results[name] = np.mean(test_selection)
 
-    return test_results, selection_results
+        name = 'knnroc'
+        knn = KNNRoC([f_c, f_i], random_state=20240212+ds_index)
+        try:
+            _, test_selection = knn.run(x_val, y_val, x_test)
+        except Exception:
+            print('ERROR knnroc', ds_index)
+            exit()
+        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+        loss_test_test = rmse(test_prediction_test, y_test)
+        np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+        test_results[name] = loss_test_test
+        selection_results[name] = np.mean(test_selection)
+
+        name = 'oms'
+        oms = OMS_ROC([f_c, f_i], nc_max=10, random_state=20240212+ds_index)
+        try:
+            _, test_selection = oms.run(x_val, y_val, x_test)
+        except Exception:
+            print('ERROR oms', ds_index)
+            exit()
+        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+        loss_test_test = rmse(test_prediction_test, y_test)
+        np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+        test_results[name] = loss_test_test
+        selection_results[name] = np.mean(test_selection)
+
+        name = 'dets'
+        dets = DETS()
+        try:
+            _, test_selection = dets.run(x_val, y_val.squeeze(), np.vstack([nn_preds_val, lin_preds_val]), x_test, y_test.squeeze(), np.vstack([nn_preds_test, lin_preds_test]), only_best=True)
+        except AssertionError:
+            print('ERROR dets', ds_index)
+            exit()
+        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+        loss_test_test = rmse(test_prediction_test, y_test)
+        np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+        test_results[name] = loss_test_test
+        selection_results[name] = np.mean(test_selection)
+
+    # Selection oracle
+    # for p in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
+    #     name = f'ErrorOracle{int(100*p)}'
+    #     test_selection = selection_oracle_percent(y_test, lin_preds_test, nn_preds_test, p)
+    #     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    #     loss_test_test = rmse(test_prediction_test, y_test)
+    #     np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+    #     test_results[name] = loss_test_test
+    #     selection_results[name] = np.mean(test_selection)
+
+    for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
+        name = f'NewOracle{int(100*p)}'
+        test_selection = oracle(lin_preds_test, nn_preds_test, y_test, p)
+        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+        loss_test_test = rmse(test_prediction_test, y_test)
+        np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+        test_results[name] = loss_test_test
+        selection_results[name] = np.mean(test_selection)
+
+    return test_results, selection_results, gfi_results
 
 
 if __name__ == '__main__':

@@ -1,32 +1,44 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import pickle
 
 from scipy.stats import mode
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from os import makedirs
 
-class ThreeSubsetEnsemble:
+class MedianPredictionEnsemble:
 
-    def __init__(self, alpha, random_state=None):
-        self.alpha = alpha
-        self.rng = np.random.RandomState(random_state)
+    def __init__(self, estimators):
+        self.estimators = estimators
 
-    def _get_epsilon(self, p_one, N):
-        r = min(p_one / (1-p_one), (1-p_one)/p_one)
-        expr = np.exp(((-self.alpha**2 * (N/2)) / (r + self.alpha * 1/3)) + np.log(2))
-        return r, expr
+    @classmethod
+    def load_model(cls, ds_name, ds_index, n=10):
+        estimators = []
+        for i in range(n):
+            with open(f'models/{ds_name}/{ds_index}/nns/{i}.pickle', 'rb') as f:
+                estimators.append(pickle.load(f))
 
-    def fit(self, X, y):
-        T = 1
+        return cls(estimators)
 
-        # Split data initial
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.4, random_state=self.rng)
+    def save_model(self, ds_name, ds_index):
+        makedirs(f'models/{ds_name}/{ds_index}/nns/', exist_ok=True)
+        for idx, estimator in enumerate(self.estimators):
+            with open(f'models/{ds_name}/{ds_index}/nns/{idx}.pickle', 'wb+') as f:
+                pickle.dump(estimator, f)
 
-        emp_one = np.mean(y_val)
 
+    def fit(self, *args, **kwargs):
+        for estimator in self.estimators:
+            estimator.fit(*args, **kwargs)
 
-
+    def predict(self, X):
+        preds = []
+        for estimator in self.estimators:
+            preds.append(estimator.predict(X).reshape(-1, 1))
+        
+        return np.median(np.concatenate(preds, axis=-1), axis=-1).squeeze()
 
 class DownsampleEnsembleClassifier:
 
@@ -58,9 +70,10 @@ class UpsampleEnsembleClassifier:
         self.rng = np.random.RandomState(random_state)
         self.estimators = [model_class(*args, random_state=self.rng, **kwargs) for _ in range(self.n_member)]
 
-    def fit(self, X, y, minority=0):
+    def fit(self, X, y):
         one_indices = np.where(y == 1)[0]
         zero_indices = np.where(y == 0)[0]
+        minority = int(np.mean(y) <= 0.5)
 
         # Upsample minority
         for i in range(self.n_member):
@@ -71,9 +84,16 @@ class UpsampleEnsembleClassifier:
             _y = y[indices]
             self.estimators[i].fit(_x, _y)
 
+    def predict_proba(self, X):
+        preds = np.concatenate([self.estimators[i].predict_proba(X)[:, 1].reshape(1, -1) for i in range(self.n_member)], axis=0)
+        return preds.mean(axis=0), preds.std(axis=0)
+
     def predict(self, X, thresh=0.5):
-        preds = np.vstack([(self.estimators[i].predict_proba(X)[:, 1] >= thresh).astype(np.int8) for i in range(self.n_member)])
-        return mode(preds, keepdims=True)[0].squeeze()
+        preds_proba, _ = self.predict_proba(X)
+        return (preds_proba >= thresh).astype(np.int8)
+
+    def global_feature_importance(self):
+        return np.vstack([est.feature_importances_ for est in self.estimators]).mean(axis=0)
 
 # Scikit-learn ensemble with median prediction
 class Ensemble:

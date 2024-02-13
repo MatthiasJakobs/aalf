@@ -7,6 +7,11 @@ TREATMENT_DICT = {
     'linear': 'Linear',
     'nn': 'Neural Network',
     'selOpt': 'Optimal Selection',
+    'v12': 'OurMethod',
+    'ade': 'ADE',
+    'dets': 'DETS',
+    'knnroc': 'KNN-RoC',
+    'oms': 'OMS-RoC'
 }
 
 DATASET_DICT = {

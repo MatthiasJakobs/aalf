@@ -1,8 +1,9 @@
 import numpy as np
 import pickle 
 import pandas as pd
+import matplotlib.pyplot as plt
 
-from main import MedianPredictionEnsemble
+from models import MedianPredictionEnsemble
 from datasets import load_dataset
 from tsx.datasets import windowing
 from sklearn.metrics import mean_absolute_error, mean_squared_error
@@ -135,7 +136,7 @@ def plot_table(df, save_path, methods, transpose=False):
 
 if __name__ == '__main__':
 
-    methods = ['lin', 'nn', 'v11_0.7', 'v11_0.8', 'v11_0.9']
+    methods = ['lin', 'nn', 'v12_0.7', 'v12_0.8', 'v12_0.9']
     ds_names = ['pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing', 'weather' ]
 
     EVAL_PATH = 'results/eval.pickle'

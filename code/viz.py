@@ -10,6 +10,47 @@ from sklearn.metrics import silhouette_score
 from selection import selection_oracle_percent
 from cdd_plots import TREATMENT_DICT, DATASET_DICT
 
+TEMPLATE_WIDTHS = {
+    'LNCS': 347.12354
+}
+
+def get_figsize(template, height_scale=1, subplots=(1,1)):
+
+    # Using seaborn's style
+    #plt.style.use('seaborn')
+
+    tex_fonts = {
+        # Use LaTeX to write all text
+        "text.usetex": True,
+        "font.family": "serif",
+        # Use 10pt font in plots, to match 10pt font in document
+        "axes.labelsize": 8,
+        "font.size": 8,
+        # Make the legend/label fonts a little smaller
+        "legend.fontsize": 8,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8
+    }
+
+    plt.rcParams.update(tex_fonts)
+    width = TEMPLATE_WIDTHS[template]
+    fig_width_pt = width
+
+    # Convert from pt to inches
+    inches_per_pt = 1 / 72.27
+
+    # Golden ratio to set aesthetic figure height
+    # https://disq.us/p/2940ij3
+    golden_ratio = (5**.5 - 1) / 2
+
+    # Figure width in inches
+    fig_width_in = fig_width_pt * inches_per_pt
+    # Figure height in inches
+    fig_height_in = fig_width_in * golden_ratio * (subplots[0] / subplots[1]) * height_scale
+
+    fig_dim = (fig_width_in, fig_height_in)
+    return fig_dim
+
 def cluster_rocs(rocs):
     # Find cluster with minimal inertia
     tslearn_formatted = to_time_series_dataset([r.x for r in rocs])
@@ -122,32 +163,46 @@ def plot_all_selection_percentage():
     fig.tight_layout()
     fig.savefig('test_all.png')
 
-def _plot_single_selection_performance(ax, idx, ds_name, methods):
+def _plot_single_selection_performance(ax, idx, ds_name, methods, s=16):
     errors = pd.read_csv(f'results/{ds_name}_test.csv')
     selections = pd.read_csv(f'results/{ds_name}_selection.csv')
 
     # Draw horizontal line where NN error is 
     ax.axhline(errors['nn'].mean(), linestyle='--', color='black', alpha=0.3)
 
-    ax.scatter(0, errors['nn'].mean(), label='NN' if idx == 0 else '')
-    ax.scatter(1, errors['linear'].mean(), label='Linear' if idx == 0 else '')
+    ax.scatter(0, errors['nn'].mean(), s=s, label='NN' if idx == 0 else '')
+    ax.scatter(1, errors['linear'].mean(), s=s, label='Linear' if idx == 0 else '')
 
     for method in methods:
-        if method == 'v11':
-            ps = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-            sel = [selections[f'v11_{p}'].mean() for p in ps]
-            err = [errors[f'v11_{p}'].mean() for p in ps]
-            ax.plot(sel, err, c='green', alpha=.7)
-            ax.scatter(sel, err, c='green', label='v11' if idx == 0 else '')
-        else:
-            ax.scatter(selections[method].mean(), errors[method].mean(), label=method if idx == 0 else '')
+        label = TREATMENT_DICT.get(method, method)
+        if method == 'v12':
+            color = 'C6'
+            ps = [0.5, 0.6, 0.7, 0.8, 0.9]
+            sel = [selections[f'v12_{p}'].mean() for p in ps]
+            err = [errors[f'v12_{p}'].mean() for p in ps]
+            ax.plot(sel, err, c=color, alpha=.7)
+            ax.scatter(sel, err, c=color, s=s, label=label if idx == 0 else '')
+            continue
+        # else:
+        #     ax.scatter(selections[method].mean(), errors[method].mean(), label=method if idx == 0 else '')
 
-    # Oracle baseline
-    ps = [10, 20, 30, 40, 50, 60, 70, 80, 90]
-    sel = [selections[f'ErrorOracle{p}'].mean() for p in ps]
-    err = [errors[f'ErrorOracle{p}'].mean() for p in ps]
-    ax.plot(sel, err, c='gray', alpha=.7)
-    ax.scatter(sel, err, marker='+', c='gray', label='Oracle' if idx == 0 else '')
+        # Try all other methods
+        try:
+            sel = selections[method].mean()
+            err = errors[method].mean()
+            ax.plot(sel, err, alpha=.7)
+            ax.scatter(sel, err, s=s, marker='*', label=label if idx == 0 else '')
+        except KeyError:
+            print('Method', method, 'not in results, skipping')
+            continue
+
+
+    ps = [50, 60, 70, 80, 90]
+    sel = [selections[f'NewOracle{p}'].mean() for p in ps]
+    err = [errors[f'NewOracle{p}'].mean() for p in ps]
+    color = 'C7'
+    ax.plot(sel, err, c=color, alpha=.7)
+    ax.scatter(sel, err, marker='+', s=s, c=color, label='Oracle' if idx == 0 else '')
 
     ax.grid()
     ax.set_title(DATASET_DICT.get(ds_name, ds_name))
@@ -165,7 +220,7 @@ def plot_selection_percentage_single(ds_name, methods):
 
 def plot_selection_performance(methods):
     ds_names = ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing']
-    fig, axs = plt.subplots(2,2, sharex=True)
+    fig, axs = plt.subplots(2,2, sharex=True, figsize=get_figsize('LNCS', subplots=(2,2)))
     for idx, ds_name in enumerate(ds_names):
         ax = axs.ravel()[idx]
         ax = _plot_single_selection_performance(ax, idx, ds_name, methods)
@@ -173,14 +228,38 @@ def plot_selection_performance(methods):
     fig.supxlabel('Mean Selection of Linear Model')
     fig.tight_layout()
     fig.subplots_adjust(top=0.80)
-    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3))
+    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3)//2)
     fig.savefig('plots/scatter.png')
+    fig.savefig('plots/scatter.pdf')
         
-        
+def plot_global_feature_importance():
+    fig, axs = plt.subplots(2,2, sharex=True, sharey=True, figsize=get_figsize('LNCS', subplots=(2,2)))
+    ds_names = ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing']
+    for idx, ds_name in enumerate(ds_names):
+        ax = axs.ravel()[idx]
+        df = pd.read_csv(f'results/{ds_name}_gfi.csv').set_index('dataset_names')
+        X = df.dropna(axis=0).to_numpy()
+
+        mus = X.mean(axis=0)
+        stds = X.std(axis=0)
+
+        ax.bar(0, mus[0], yerr=stds[0], color='red', label=r'$(\hat{y}_{t,c}-\hat{y}_{t,i})$' if idx == 0 else '') 
+        ax.bar(1, mus[1], yerr=stds[1], color='green', label=r'$(\hat{e}_{t,c}-\hat{e}_{t,i})$' if idx == 0 else '') 
+        ax.bar(np.arange(X.shape[-1]-2)+2, mus[2:], yerr=stds[2:], label=r'$x_t$' if idx == 0 else '') 
+
+        ax.set_title(DATASET_DICT.get(ds_name, ds_name))
+        ax.set_xticks([])
+
+    fig.supylabel('Mean Global Feature Importance')
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.83)
+    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=3)
+    fig.savefig(f'plots/gfi.pdf')
     
 if __name__ == '__main__':
     #plot_all_selection_percentage()
     #plot_selection_percentage('weather', drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.5', 'v5', 'v8', 'test_1.2', 'v10'])
     #plot_selection_performance(['v9', 'v10', 'v11', 'test_1.0'])
     #plot_selection_percentage_single('web_traffic', ['v11_0.7', 'v10_0.7'])
-    plot_selection_performance(['v11'])
+    plot_selection_performance(['v12', 'ade', 'dets', 'knnroc', 'oms'])
+    #plot_global_feature_importance()
