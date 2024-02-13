@@ -191,3 +191,14 @@ old_explanations/
 old_models/
 old_data/
 preds/
+code/test*
+test*
+
+code/roc_correlation.py
+errors.png
+eval.pickle
+main.*
+*.zip
+table_test
+table.*
+tree.png
