@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 from tsx.datasets.monash import load_monash
+from cdd_plots import DATASET_DICT
 
 def load_dataset(ds_name, fraction=1):
     if ds_name == 'web_traffic':
@@ -38,14 +39,33 @@ def load_dataset(ds_name, fraction=1):
     return X, horizons, indices
 
 def get_dataset_statistics():
-    ds_names = ['web_traffic', 'kdd_cup_nomissing', 'weather', 'pedestrian_counts']
+    ds_names = ['web_traffic', 'weather','kdd_cup_nomissing', 'pedestrian_counts']
     total = 0
+    df = pd.DataFrame(columns=['Dataset name', 'Nr. Datapoints', 'Min. Length', 'Max. Length', 'Avg. Length'])
+    df = df.set_index('Dataset name')
     for ds_name in ds_names:
-        df = pd.read_csv(f'results/{ds_name}_test.csv')
-        n_datapoints = len(df)
+        X, _, indices = load_dataset(ds_name)
+        n_datapoints = len(indices)
         total += n_datapoints
-        print(ds_name, n_datapoints)
-    print('Total:', total)
+        lengths = [len(x) for x in X]
+        df.loc[DATASET_DICT.get(ds_name, ds_name)] = (int(n_datapoints), int(min(lengths)), int(max(lengths)), np.mean(lengths))
+    df.loc['\\textbf{Total}'] = [total, np.nan, np.nan, np.nan]
+    df['Nr. Datapoints'] = pd.to_numeric(df['Nr. Datapoints'], errors='coerce').astype('Int32')
+    df['Min. Length'] = pd.to_numeric(df['Min. Length'], errors='coerce').astype('Int32')
+    df['Max. Length'] = pd.to_numeric(df['Max. Length'], errors='coerce').astype('Int32')
+
+    df = df.reset_index()
+    tex = df.to_latex(na_rep='', float_format='%.2f', index=False)
+    tex_list = tex.splitlines()
+    tex_list.insert(len(tex_list)-3, '\midrule')
+
+    # Use tabular* for correct width
+    tex_list = ['\\begin{tabular*}{\\linewidth}{@{\extracolsep{\\fill}} lrrrr}'] + tex_list[1:-1] + ['\\end{tabular*}']
+    tex = '\n'.join(tex_list)
+
+    with open('plots/ds_table.tex', 'w+') as _f:
+        _f.write(tex)
+
 
 if __name__ == '__main__':
     get_dataset_statistics()
