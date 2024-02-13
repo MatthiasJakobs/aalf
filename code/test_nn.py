@@ -75,7 +75,7 @@ def train(epoch, model, device, train_loader, optimizer, _lambda):
         p_t = model(X).squeeze()
         prediction_loss = ((y - (p_t * fi_preds + (1-p_t) * fc_preds))**2)
         constrained_loss = (_lambda * (1-p_t))
-        loss = prediction_loss.mean() + constrained_loss.mean()
+        loss = (prediction_loss + constrained_loss).sum()
         loss.backward()
         optimizer.step()
 
@@ -126,11 +126,11 @@ def train_global_model(train_dl, val_dl):
     device = get_device()
     n_epochs = 50
     #_lambda = 0
-    _lambda = 0.01
+    _lambda = 0.05
 
     with fixedseed(torch, 102391):
         model = Net().to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=2e-3)
+        optimizer = torch.optim.Adam(model.parameters(), lr=4e-3)
 
         for epoch in range(n_epochs):
             train_total, train_prediction, train_purity = train(epoch, model, device, train_dl, optimizer, _lambda)
@@ -188,7 +188,7 @@ def global_model():
         x_test = np.load(f'data/optim_london_smart_meters_nomissing/{ds_index}/test_X.npy')
         y_test = np.load(f'data/optim_london_smart_meters_nomissing/{ds_index}/test_y.npy')
 
-        selection = model.predict(x_test)
+        #selection = model.predict(x_test)
 
         lin_preds_test = x_test[:, 0]
         nn_preds_test = x_test[:, 1]
@@ -202,11 +202,11 @@ def global_model():
         #print('nn', loss_test_test)
         test_results['nn'] = loss_test_test
 
-        test_prediction_test = np.choose(selection, [nn_preds_test, lin_preds_test])
-        loss_test_test = rmse(test_prediction_test, y_test)
-        #print('new method', loss_test_test)
-        test_results['new_method'] = loss_test_test
-        selection_results['new_method'] = np.mean(selection)
+        # test_prediction_test = np.choose(selection, [nn_preds_test, lin_preds_test])
+        # loss_test_test = rmse(test_prediction_test, y_test)
+        # #print('new method', loss_test_test)
+        # test_results['new_method'] = loss_test_test
+        # selection_results['new_method'] = np.mean(selection)
 
     log_test.append(test_results)
     log_selection.append(selection_results)
