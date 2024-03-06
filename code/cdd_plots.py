@@ -18,6 +18,9 @@ TREATMENT_DICT = {
     'v12_0.7': r'AALF$_{0.7}$',
     'v12_0.8': r'AALF$_{0.8}$',
     'v12_0.9': r'AALF$_{0.9}$',
+    'NewOracle50': r'Oracle$_{0.5}$',
+    'NewOracle70': r'Oracle$_{0.7}$',
+    'NewOracle90': r'Oracle$_{0.9}$',
 }
 
 DATASET_DICT = {

@@ -8,7 +8,7 @@ from tslearn.utils import to_time_series_dataset
 from tsx.model_selection import ROC_Member
 from sklearn.metrics import silhouette_score
 from selection import selection_oracle_percent
-from cdd_plots import TREATMENT_DICT, DATASET_DICT
+from cdd_plots import TREATMENT_DICT, DATASET_DICT, DATASET_DICT_SMALL
 
 TEMPLATE_WIDTHS = {
     'LNCS': 347.12354
@@ -258,15 +258,34 @@ def plot_global_feature_importance():
 def show_empirical_selection_performance():
     ds_names = ['pedestrian_counts', 'kdd_cup_nomissing', 'weather', 'web_traffic']
     cols = sum([[f'v12_{p}', f'NewOracle{int(p*100)}'] for p in [0.5, 0.7, 0.9]], [])
-    all_series = []
+    all_series_mean = []
+    all_series_std = []
     for ds_name in ds_names:
         df = pd.read_csv(f'results/{ds_name}_selection.csv').set_index('dataset_names')
-        all_series.append(df[cols].mean(axis=0))
+        all_series_mean.append(df[cols].mean(axis=0))
+        all_series_std.append(df[cols].std(axis=0))
 
-    df = pd.concat(all_series, axis=1).T
-    df.index = ds_names
-    print(df)
-    #print(df[[f'v12_{p}', f'NewOracle{int(p*100)}']].mean(axis=0))
+    df_mean = pd.concat(all_series_mean, axis=1).T
+    df_mean.index = ds_names
+    df_mean = df_mean.applymap(lambda x: f'{x:.2f}')
+
+    df_std = pd.concat(all_series_std, axis=1).T
+    df_std.index = ds_names
+    df_std = df_std.applymap(lambda x: f'{x:.2f}')
+
+    print(df_mean)
+    print(df_std)
+
+    combined_df = df_mean.astype('str') + ' \pm ' + df_std.astype('str')
+    combined_df = combined_df.applymap(lambda e: f'${e}$')
+    combined_df = combined_df.rename(columns=TREATMENT_DICT, index=DATASET_DICT_SMALL)
+    tex = combined_df.to_latex()
+    tex_list = tex.splitlines()
+    tex_list = ['\\begin{tabular*}{\\linewidth}{@{\extracolsep{\\fill}} '+ 'l'*(len(cols)+1) + '}'] + tex_list[1:-1] + ['\\end{tabular*}']
+    tex = '\n'.join(tex_list)
+
+    with open('results/sel_table.tex', 'w+') as _f:
+        _f.write(tex)
 
 
 if __name__ == '__main__':
