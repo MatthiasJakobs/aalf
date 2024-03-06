@@ -104,17 +104,16 @@ def run_v12(lin_train_preds, ens_train_preds, y_train, y_test, x_val, y_val, x_t
 
     return name, clf.predict(X_test, thresh=thresh).astype(np.int8), gfi
 
-def run_v11(lin_train_preds, ens_train_preds, y_train, y_test, x_val, y_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, random_state, p=0.9):
-
-    name = f'v11_{p}'
+def run_v13(lin_train_preds, ens_train_preds, y_train, y_test, x_val, y_val, x_test, lin_val_preds, ens_val_preds, lin_test_preds, ens_test_preds, random_state, p=0.9, return_predictor=False):
+    name = f'v13_{p}'
 
     # Get oracle prediction
-    val_selection = selection_oracle_percent(y_val, lin_val_preds, ens_val_preds, p)
+    val_selection = oracle(lin_val_preds, ens_val_preds, y_val,  p=p)
     n_zeros = (val_selection == 0).sum()
     if n_zeros == 0:
-        return name, np.ones((len(x_test))).astype(np.int8)
+        return name, np.ones((len(x_test))).astype(np.int8), None
     if n_zeros == len(val_selection):
-        return name, np.zeros((len(x_test))).astype(np.int8)
+        return name, np.zeros((len(x_test))).astype(np.int8), None
 
     # Last errors
     lin_errors, nn_errors = get_last_errors(lin_train_preds, ens_train_preds, y_train, lin_val_preds, ens_val_preds, y_val)
@@ -133,5 +132,12 @@ def run_v11(lin_train_preds, ens_train_preds, y_train, y_test, x_val, y_val, x_t
     # Train model(s)
     clf = UpsampleEnsembleClassifier(RandomForestClassifier, 9, random_state=random_state, n_estimators=128)
     clf.fit(X_train, val_selection)
+    gfi = clf.global_feature_importance()
 
-    return name, clf.predict(X_test, thresh=0.6).astype(np.int8)
+    thresh = 0.5
+    #thresh = 0.5
+
+    if return_predictor:
+        return clf, thresh
+
+    return name, clf.predict(X_test, thresh=thresh).astype(np.int8), gfi

@@ -13,7 +13,7 @@ from joblib import Parallel, delayed
 from os.path import exists
 from tsx.model_selection import ADE, DETS, KNNRoC, OMS_ROC
 
-from selection import selection_oracle_percent, run_v11, run_v12, oracle
+from selection import selection_oracle_percent, run_v13, run_v12, oracle
 from datasets import load_dataset
 from models import MedianPredictionEnsemble
 from evaluation import load_models, preprocess_data
@@ -159,21 +159,24 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
 
     # - Model selection
 
-    if 'v11' in to_run:
-        for p in [0.5, 0.6, 0.7, 0.8, 0.9]:
-            name, test_selection = run_v11(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=p)
-            test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-            loss_test_test = rmse(test_prediction_test, y_test)
-            np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
-            test_results[name] = loss_test_test
-            selection_results[name] = np.mean(test_selection)
-
     if 'v12' in to_run:
         for p in [0.5, 0.6, 0.7, 0.8, 0.9]:
             name, test_selection, gfi = run_v12(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=p)
             if p == 0.9 and gfi is not None:
                 for feat_idx in range(12):
                     gfi_results[feat_idx] = gfi[feat_idx]
+            test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+            loss_test_test = rmse(test_prediction_test, y_test)
+            np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+            test_results[name] = loss_test_test
+            selection_results[name] = np.mean(test_selection)
+
+    if 'v13' in to_run:
+        for p in [0.5, 0.6, 0.7, 0.8, 0.9]:
+            name, test_selection, gfi = run_v12(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=p)
+            # if p == 0.9 and gfi is not None:
+            #     for feat_idx in range(12):
+            #         gfi_results[feat_idx] = gfi[feat_idx]
             test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
             loss_test_test = rmse(test_prediction_test, y_test)
             np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
@@ -232,16 +235,6 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
         np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
         test_results[name] = loss_test_test
         selection_results[name] = np.mean(test_selection)
-
-    # Selection oracle
-    # for p in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
-    #     name = f'ErrorOracle{int(100*p)}'
-    #     test_selection = selection_oracle_percent(y_test, lin_preds_test, nn_preds_test, p)
-    #     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-    #     loss_test_test = rmse(test_prediction_test, y_test)
-    #     np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
-    #     test_results[name] = loss_test_test
-    #     selection_results[name] = np.mean(test_selection)
 
     for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
         name = f'NewOracle{int(100*p)}'
