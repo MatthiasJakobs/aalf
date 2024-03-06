@@ -191,8 +191,11 @@ old_explanations/
 old_models/
 old_data/
 preds/
-code/test*
-test*
+code/test_oracle.py
+code/test_concurency.py
+code/test_predictor.py
+code/test_simple.py
+test.png
 
 code/roc_correlation.py
 errors.png
