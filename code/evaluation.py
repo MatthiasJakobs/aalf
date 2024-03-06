@@ -1,3 +1,4 @@
+import tqdm
 import numpy as np
 import pickle 
 import pandas as pd
@@ -9,8 +10,11 @@ from tsx.datasets import windowing
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from itertools import product
 from cdd_plots import DATASET_DICT_SMALL
+from cdd_plots import TREATMENT_DICT
 from os import system, remove
 from os.path import basename, exists, dirname, join
+
+ALL_METRICS = ['RMSE', 'MAE', 'MSE']
 
 def load_models(ds_name, ds_index):
     with open(f'models/{ds_name}/{ds_index}/linear.pickle', 'rb') as f:
@@ -61,11 +65,11 @@ def preprocess_data(X, L, H):
     return (x_train, y_train), (x_val, y_val), (x_test, y_test)
 
 def main(ds_names, methods):
-    ds_fraction = 0.3
+    ds_fraction = 1
     rng = np.random.RandomState(20240103)
 
     L = 10
-    results = { method_name: {'Dataset': [], 'MAE': [], 'MSE': []} for method_name in methods}
+    results = { method_name: {'Dataset': [], 'MAE': [], 'MSE': [], 'RMSE': []} for method_name in methods}
 
     for ds_name in ds_names:
         _X, horizons, indices = load_dataset(ds_name)
@@ -75,8 +79,9 @@ def main(ds_names, methods):
 
         mses = {method_name: 0 for method_name in methods}
         maes = {method_name: 0 for method_name in methods}
+        rmses = {method_name: 0 for method_name in methods}
 
-        for ds_index in indices:
+        for ds_index in tqdm.tqdm(indices, desc=ds_name):
             (_, _), (_, _), (_, y_test) = preprocess_data(_X[ds_index], L, horizons[ds_index])
             y_test = y_test.reshape(-1)
 
@@ -85,13 +90,16 @@ def main(ds_names, methods):
                 preds = np.load(f'preds/{ds_name}/{ds_index}/{method_name}.npy')
                 mse = mean_squared_error(y_test, preds)
                 mae = mean_absolute_error(y_test, preds)
+                rmse = mean_squared_error(y_test, preds, squared=False)
                 mses[method_name] += (mse / len(indices))
                 maes[method_name] += (mae / len(indices))
+                rmses[method_name] += (rmse / len(indices))
 
         for method_name in methods:
             results[method_name]['Dataset'].append(DATASET_DICT_SMALL[ds_name])
             results[method_name]['MSE'].append(mses[method_name])
             results[method_name]['MAE'].append(maes[method_name])
+            results[method_name]['RMSE'].append(rmses[method_name])
 
     print(results)
     results = { k: pd.DataFrame(v).set_index('Dataset') for k, v in results.items() }
@@ -99,13 +107,26 @@ def main(ds_names, methods):
     return df
 
 def highlight_min(s, to_highlight):
-    indices = []
+    smallest_indices = []
+    second_smallest_indices = []
     for th in to_highlight:
-        smallest_index = np.where(s == np.min(s[th].to_numpy()))[0][0]
-        indices.append(smallest_index)
-    return ['textbf:--rwrap;' if idx in indices else None for idx in range(len(s)) ]
+        s_sorted = np.sort(s[th])
+        smallest_index = np.where(s == s_sorted[0])[0][0]
+        second_smallest_index = np.where(s == s_sorted[1])[0][0]
+        smallest_indices.append(smallest_index)
+        second_smallest_indices.append(second_smallest_index)
 
-def make_pretty(styler, to_highlight, save_path, transpose=False):
+    to_return = []
+    for idx in range(len(s)):
+        if idx in smallest_indices:
+            to_return.append('textbf:--rwrap;')
+        elif idx in second_smallest_indices:
+            to_return.append('underline:--rwrap;')
+        else:
+            to_return.append(None)
+    return to_return
+
+def make_pretty(styler, to_highlight, save_path, transpose=False, hide_metrics=False):
     if transpose:
         hide_axis=1
         highlight_axis=0
@@ -117,33 +138,58 @@ def make_pretty(styler, to_highlight, save_path, transpose=False):
     styler.format(precision=3)
     styler.hide(axis=hide_axis, names=True)
 
+    if hide_metrics:
+        styler.hide(axis=highlight_axis, level=1)
+
     if transpose:
-        styler.to_latex(save_path, hrules=True)
+        tex = styler.to_latex(hrules=True)
     else:
-        styler.to_latex(save_path, multicol_align='c', hrules=True)
+        tex = styler.to_latex(multicol_align='c', hrules=True)
+
+    # Use tabular*
+    tex_list = tex.splitlines()
+    tex_list = ['\\begin{tabular*}{\\linewidth}{@{\extracolsep{\\fill}} l'+ 'r'*len(to_highlight[0]) + '}'] + tex_list[1:-1] + ['\\end{tabular*}']
+    tex = '\n'.join(tex_list)
+
+    with open(save_path, 'w+') as _f:
+        _f.write(tex)
     
     return styler
 
 
 def plot_table(df, save_path, methods, transpose=False):
 
-    metrics = ['MSE', 'MAE']
+    metrics = ['RMSE']
+    unused_metrics = [m for m in ALL_METRICS if m not in metrics]
+
+    # Drop metrics not used 
+    columns_to_keep = [(level_0, level_1) for level_0, level_1 in df.columns if level_1 in metrics]
+    df = df[columns_to_keep]
+
+    # Drop methods not used 
+    columns_to_keep = [(level_0, level_1) for level_0, level_1 in df.columns if level_0 in methods]
+    df = df[columns_to_keep]
+
+    # Rename methods
+    methods = [TREATMENT_DICT.get(t_name, t_name) for t_name in methods]
+    df.columns = pd.MultiIndex.from_tuples([(TREATMENT_DICT.get(t_name, t_name), m_name) for (t_name, m_name) in df.columns])
+    print(df.columns)
     
     to_highlight = [list(product(methods, [metric])) for metric in metrics]
     if transpose:
         df = df.T
-    df.style.pipe(make_pretty, save_path=save_path, to_highlight=to_highlight, transpose=transpose)
+    df.style.pipe(make_pretty, save_path=save_path, to_highlight=to_highlight, transpose=transpose, hide_metrics=len(metrics)==1)
 
 if __name__ == '__main__':
 
-    methods = ['lin', 'nn', 'v12_0.7', 'v12_0.8', 'v12_0.9']
+    methods = ['lin', 'nn', 'v12_0.5', 'v12_0.9', 'oms', 'knnroc', 'ade', 'dets']
     ds_names = ['pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing', 'weather' ]
 
     EVAL_PATH = 'results/eval.pickle'
-    TABLE_PATH = 'results/table.tex'
+    TABLE_PATH = 'results/metrics_table.tex'
 
     if not exists(EVAL_PATH):
-        print()
+        print('recreate', EVAL_PATH)
         results = main(ds_names, methods)
         results.to_pickle(EVAL_PATH)
     else:

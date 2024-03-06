@@ -242,8 +242,8 @@ def plot_global_feature_importance():
         mus = X.mean(axis=0)
         stds = X.std(axis=0)
 
-        ax.bar(0, mus[0], yerr=stds[0], color='red', label=r'$(\hat{y}_{t,c}-\hat{y}_{t,i})$' if idx == 0 else '') 
-        ax.bar(1, mus[1], yerr=stds[1], color='green', label=r'$(\hat{e}_{t,c}-\hat{e}_{t,i})$' if idx == 0 else '') 
+        ax.bar(0, mus[0], yerr=stds[0], color='C3', label=r'$(\hat{y}_{t,c}-\hat{y}_{t,i})$' if idx == 0 else '') 
+        ax.bar(1, mus[1], yerr=stds[1], color='C2', label=r'$(\hat{e}_{t,c}-\hat{e}_{t,i})$' if idx == 0 else '') 
         ax.bar(np.arange(X.shape[-1]-2)+2, mus[2:], yerr=stds[2:], label=r'$x_t$' if idx == 0 else '') 
 
         ax.set_title(DATASET_DICT.get(ds_name, ds_name))
@@ -254,11 +254,27 @@ def plot_global_feature_importance():
     fig.subplots_adjust(top=0.83)
     fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=3)
     fig.savefig(f'plots/gfi.pdf')
-    
+
+def show_empirical_selection_performance():
+    ds_names = ['pedestrian_counts', 'kdd_cup_nomissing', 'weather', 'web_traffic']
+    cols = sum([[f'v12_{p}', f'NewOracle{int(p*100)}'] for p in [0.5, 0.7, 0.9]], [])
+    all_series = []
+    for ds_name in ds_names:
+        df = pd.read_csv(f'results/{ds_name}_selection.csv').set_index('dataset_names')
+        all_series.append(df[cols].mean(axis=0))
+
+    df = pd.concat(all_series, axis=1).T
+    df.index = ds_names
+    print(df)
+    #print(df[[f'v12_{p}', f'NewOracle{int(p*100)}']].mean(axis=0))
+
+
 if __name__ == '__main__':
     #plot_all_selection_percentage()
     #plot_selection_percentage('weather', drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.5', 'v5', 'v8', 'test_1.2', 'v10'])
     #plot_selection_performance(['v9', 'v10', 'v11', 'test_1.0'])
     #plot_selection_percentage_single('web_traffic', ['v11_0.7', 'v10_0.7'])
-    plot_selection_performance(['v12', 'ade', 'dets', 'knnroc', 'oms'])
+    #plot_selection_performance(['v12', 'ade', 'dets', 'knnroc', 'oms'])
     #plot_global_feature_importance()
+    show_empirical_selection_performance()
+
