@@ -173,7 +173,7 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
 
     if 'v13' in to_run:
         for p in [0.5, 0.6, 0.7, 0.8, 0.9]:
-            name, test_selection, gfi = run_v12(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=p)
+            name, test_selection, gfi = run_v13(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=p)
             # if p == 0.9 and gfi is not None:
             #     for feat_idx in range(12):
             #         gfi_results[feat_idx] = gfi[feat_idx]

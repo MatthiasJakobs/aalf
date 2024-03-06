@@ -21,7 +21,7 @@ def oracle(lin_preds, nn_preds, y_test, p, thresh=1e-3):
     
     # How many to pick
     selection = np.zeros((len(y_test)))
-    n_lin = int(p * len(y_test))
+    n_lin = int(np.ceil(p * len(y_test)))
 
     loss_diff = (lin_errors - nn_errors)
     I = np.argsort(loss_diff)
