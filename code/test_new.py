@@ -31,7 +31,7 @@ def main(to_run):
         X, horizons, indices = load_dataset(ds_name, fraction=1)
 
         # Subsample indices
-        p = 0.2
+        p = 0.1
         rng = np.random.default_rng(12345)
         indices = rng.choice(indices, size=int(len(indices)*p), replace=False)
 
@@ -137,7 +137,7 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     selection_results['selOpt'] = np.mean(optimal_selection_test)
 
     # - Model selection
-    ps = [0.5, 0.7, 0.9]
+    ps = [0.5, 0.9]
 
     for p in ps:
         name, test_selection, gfi = run_v12(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=p)

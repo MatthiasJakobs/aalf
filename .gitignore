@@ -195,6 +195,7 @@ code/test_oracle.py
 code/test_concurency.py
 code/test_predictor.py
 code/test_simple.py
+code/test.py
 test.png
 
 code/roc_correlation.py
