@@ -160,7 +160,7 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     # - Model selection
 
     if 'v12' in to_run:
-        for p in [0.5, 0.6, 0.7, 0.8, 0.9]:
+        for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
             name, test_selection, gfi = run_v12(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=p)
             if p == 0.9 and gfi is not None:
                 for feat_idx in range(12):
@@ -236,7 +236,7 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
         test_results[name] = loss_test_test
         selection_results[name] = np.mean(test_selection)
 
-    for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
+    for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
         name = f'NewOracle{int(100*p)}'
         test_selection = oracle(lin_preds_test, nn_preds_test, y_test, p)
         test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
