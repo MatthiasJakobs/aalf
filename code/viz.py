@@ -254,37 +254,66 @@ def plot_global_feature_importance():
     fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=3)
     fig.savefig(f'plots/gfi.pdf')
 
-def show_empirical_selection_performance_table():
+def show_empirical_selection_performance_graph():
     ds_names = ['pedestrian_counts', 'kdd_cup_nomissing', 'weather', 'web_traffic']
-    cols = sum([[f'v12_{p}', f'NewOracle{int(p*100)}'] for p in [0.5, 0.7, 0.9, 0.95, 0.99]], [])
-    all_series_mean = []
-    all_series_std = []
-    for ds_name in ds_names:
-        df = pd.read_csv(f'results/{ds_name}_selection.csv').set_index('dataset_names')
-        all_series_mean.append(df[cols].mean(axis=0))
-        all_series_std.append(df[cols].std(axis=0))
+    heightscale = 0.5
+    fig, axs = plt.subplots(4, 1, sharex=False, sharey=True, figsize=get_figsize('LNCS', subplots=(4,1), height_scale=heightscale))
+    for i, ds_name in enumerate(ds_names):
+        axs[i] = _show_empirical_selection_performance_graph(ds_name, heightscale=heightscale, ax=axs[i])
 
-    df_mean = pd.concat(all_series_mean, axis=1).T
-    df_mean.index = ds_names
-    df_mean = df_mean.applymap(lambda x: f'{x:.2f}')
+    # Custom legend
+    handles, labels = plt.gca().get_legend_handles_labels()
+    unique_labels = list(set(labels))
+    unique_handles = [handles[labels.index(label)] for label in unique_labels]
 
-    df_std = pd.concat(all_series_std, axis=1).T
-    df_std.index = ds_names
-    df_std = df_std.applymap(lambda x: f'{x:.2f}')
+    # Create legend
+    fig.supxlabel(r'$p$')
+    fig.supylabel(r'Mean Selection of $f_i$ in percent')
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.90)
+    fig.legend(unique_handles, unique_labels, bbox_to_anchor=(0.5, 1), loc='upper center', ncol=2)
+    fig.savefig('plots/selection_conf_all.pdf')
 
-    print(df_mean)
-    print(df_std)
+def _show_empirical_selection_performance_graph(ds_name, heightscale=0.8, ax=None):
+    ps = [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
+    cols = sum([[f'v12_{p}', f'NewOracle{int(p*100)}'] for p in ps], [])
+    df = pd.read_csv(f'results/{ds_name}_selection.csv').set_index('dataset_names')
+    df = df[cols]
 
-    combined_df = df_mean.astype('str') + ' \pm ' + df_std.astype('str')
-    combined_df = combined_df.applymap(lambda e: f'${e}$')
-    combined_df = combined_df.rename(columns=TREATMENT_DICT, index=DATASET_DICT_SMALL)
-    tex = combined_df.to_latex()
-    tex_list = tex.splitlines()
-    tex_list = ['\\begin{tabular*}{\\linewidth}{@{\extracolsep{\\fill}} '+ 'l'*(len(cols)+1) + '}'] + tex_list[1:-1] + ['\\end{tabular*}']
-    tex = '\n'.join(tex_list)
+    set_fig = False
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, sharex=True, sharey=True, figsize=get_figsize('LNCS', subplots=(1,1), height_scale=heightscale))
+        set_fig = True
 
-    with open('results/sel_table.tex', 'w+') as _f:
-        _f.write(tex)
+    # v12
+    color = 'C6'
+    col_names = [col_name for col_name in df.columns if col_name.startswith('v12') ]
+    mus = df[col_names].mean(axis=0).to_numpy().astype(np.float32)
+    stds = df[col_names].std(axis=0).to_numpy().astype(np.float32)
+    label = 'AALF'
+    ax.errorbar(ps, mus, yerr=stds, capsize=3, color=color, label=label)
+
+    # Oracle
+    color = 'C7'
+    col_names = [col_name for col_name in df.columns if col_name.startswith('New') ]
+    mus = df[col_names].mean(axis=0).to_numpy().astype(np.float32)
+    stds = df[col_names].std(axis=0).to_numpy().astype(np.float32)
+    label = 'Oracle'
+    ax.errorbar(ps, mus, yerr=stds, capsize=3, color=color, label=label)
+
+    ax.set_ylim(-0.05, 1.15)
+    ax.set_title(DATASET_DICT[ds_name])
+    ax.grid(alpha=0.5, zorder=0)
+    ax.set_xticks(ps, ps)
+    if set_fig:
+        ax.set_xlabel(r'$p$')
+        ax.set_ylabel(r'Mean Selection of $f_i$ in percent')
+
+    if set_fig:
+        fig.tight_layout()
+        fig.legend(loc='center right')
+        fig.savefig(f'plots/selection_conf_{ds_name}.pdf')
+    return ax
 
 def show_empirical_selection_performance_boxplot():
     ds_names = ['pedestrian_counts', 'kdd_cup_nomissing', 'weather', 'web_traffic']
@@ -333,6 +362,10 @@ if __name__ == '__main__':
     #plot_selection_percentage_single('web_traffic', ['v11_0.7', 'v10_0.7'])
     plot_selection_performance(['v12', 'ade', 'dets', 'knnroc', 'oms'])
     #plot_global_feature_importance()
-    show_empirical_selection_performance_table()
-    show_empirical_selection_performance_boxplot()
+    _show_empirical_selection_performance_graph('pedestrian_counts')
+    _show_empirical_selection_performance_graph('weather')
+    _show_empirical_selection_performance_graph('web_traffic')
+    _show_empirical_selection_performance_graph('kdd_cup_nomissing')
+    show_empirical_selection_performance_graph()
+    #show_empirical_selection_performance_boxplot()
 
