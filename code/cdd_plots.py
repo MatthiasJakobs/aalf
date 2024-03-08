@@ -18,6 +18,8 @@ TREATMENT_DICT = {
     'v12_0.7': r'AALF$_{0.7}$',
     'v12_0.8': r'AALF$_{0.8}$',
     'v12_0.9': r'AALF$_{0.9}$',
+    'v12_0.95': r'AALF$_{0.95}$',
+    'v12_0.99': r'AALF$_{0.99}$',
     'NewOracle50': r'Oracle$_{0.5}$',
     'NewOracle70': r'Oracle$_{0.7}$',
     'NewOracle90': r'Oracle$_{0.9}$',
@@ -265,7 +267,7 @@ def main():
     # print('create all cdd')
     # create_all_cdd(treatment_names=['linear', 'nn', 'v12_0.9', 'v12_0.8', 'v12_0.7', 'v12_0.6', 'v12_0.5'])
     print('create overall cdd')
-    create_cdd_overall(treatment_names=['linear', 'nn', 'v12_0.9', 'v12_0.5', 'oms', 'knnroc', 'ade', 'dets'])
+    create_cdd_overall(treatment_names=['linear', 'nn', 'v12_0.9', 'v12_0.8', 'v12_0.7', 'v12_0.6', 'v12_0.95', 'v12_0.99', 'v12_0.5', 'oms', 'knnroc', 'ade', 'dets'])
 
 if __name__ == '__main__':
     main()

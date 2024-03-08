@@ -13,6 +13,8 @@ from cdd_plots import DATASET_DICT_SMALL
 from cdd_plots import TREATMENT_DICT
 from os import system, remove
 from os.path import basename, exists, dirname, join
+from shutil import which, move
+from subprocess import run
 
 ALL_METRICS = ['RMSE', 'MAE', 'MSE']
 
@@ -182,7 +184,8 @@ def plot_table(df, save_path, methods, transpose=False):
 
 if __name__ == '__main__':
 
-    methods = ['lin', 'nn', 'v12_0.5', 'v12_0.9', 'oms', 'knnroc', 'ade', 'dets']
+    #methods = ['lin', 'nn', 'v12_0.5', 'v12_0.9', 'v12_0.95', 'v12_0.99', 'oms', 'knnroc', 'ade', 'dets']
+    methods = ['v12_0.5', 'v12_0.9', 'v12_0.95', 'v12_0.99', 'oms', 'knnroc', 'ade', 'dets']
     ds_names = ['pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing', 'weather' ]
 
     EVAL_PATH = 'results/eval.pickle'
@@ -196,3 +199,34 @@ if __name__ == '__main__':
         results = pd.read_pickle(EVAL_PATH)
 
     plot_table(results, TABLE_PATH, methods, transpose=False)
+
+    # Try to render if possible
+    latex_installed = which('pdflatex') is not None
+    if latex_installed:
+        # Load output file againg
+        with open(TABLE_PATH, 'r') as _f:
+            tex = [line.strip() for line in _f.readlines()]
+        # Build a standalone latex file
+        standalone = [
+            r'\documentclass[border=5pt]{standalone}',
+            r'\usepackage{booktabs}',
+            r'\usepackage{amssymb}',
+            r'\usepackage{amsmath}',
+            r'\begin{document}',
+            r'\setlength\tabcolsep{0pt}',
+            *tex,
+            r'\end{document}',
+        ]
+        tex = '\n'.join(standalone)
+        print(basename(TABLE_PATH))
+        print(dirname(TABLE_PATH))
+        with open('tmp.tex', 'w') as _f:
+            _f.write(tex)
+        run(['pdflatex', 'tmp.tex'])
+        remove('tmp.tex')
+        remove('tmp.log')
+        remove('tmp.aux')
+
+        new_path = join(dirname(TABLE_PATH), basename(TABLE_PATH).replace('tex', 'pdf'))
+        print(new_path)
+        move('tmp.pdf', new_path)

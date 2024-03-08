@@ -1,0 +1,12 @@
+numpy
+scikit-learn==1.2.0
+pandas
+tqdm
+matplotlib
+seedpy
+scipy
+torch
+joblib
+tslearn
+git+https://github.com/MatthiasJakobs/tsx
+git+https://github.com/MatthiasJakobs/critdd

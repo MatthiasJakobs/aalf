@@ -1,13 +1,12 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
-from tslearn.clustering import TimeSeriesKMeans
 from sktime.clustering.k_medoids import TimeSeriesKMedoids
 from tslearn.utils import to_time_series_dataset
 from tsx.model_selection import ROC_Member
 from sklearn.metrics import silhouette_score
-from selection import selection_oracle_percent
 from cdd_plots import TREATMENT_DICT, DATASET_DICT, DATASET_DICT_SMALL
 
 TEMPLATE_WIDTHS = {
@@ -177,7 +176,7 @@ def _plot_single_selection_performance(ax, idx, ds_name, methods, s=12):
         label = TREATMENT_DICT.get(method, method)
         if method == 'v12':
             color = 'C6'
-            ps = [0.5, 0.6, 0.7, 0.8, 0.9]
+            ps = [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
             sel = [1-selections[f'v12_{p}'].mean() for p in ps]
             err = [errors[f'v12_{p}'].mean() for p in ps]
 
@@ -196,7 +195,7 @@ def _plot_single_selection_performance(ax, idx, ds_name, methods, s=12):
             continue
 
 
-    ps = [50, 60, 70, 80, 90]
+    ps = [50, 60, 70, 80, 90, 95, 99]
     sel = [1-selections[f'NewOracle{p}'].mean() for p in ps]
     err = [errors[f'NewOracle{p}'].mean() for p in ps]
     color = 'C7'
@@ -255,9 +254,9 @@ def plot_global_feature_importance():
     fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=3)
     fig.savefig(f'plots/gfi.pdf')
 
-def show_empirical_selection_performance():
+def show_empirical_selection_performance_table():
     ds_names = ['pedestrian_counts', 'kdd_cup_nomissing', 'weather', 'web_traffic']
-    cols = sum([[f'v12_{p}', f'NewOracle{int(p*100)}'] for p in [0.5, 0.7, 0.9]], [])
+    cols = sum([[f'v12_{p}', f'NewOracle{int(p*100)}'] for p in [0.5, 0.7, 0.9, 0.95, 0.99]], [])
     all_series_mean = []
     all_series_std = []
     for ds_name in ds_names:
@@ -287,13 +286,53 @@ def show_empirical_selection_performance():
     with open('results/sel_table.tex', 'w+') as _f:
         _f.write(tex)
 
+def show_empirical_selection_performance_boxplot():
+    ds_names = ['pedestrian_counts', 'kdd_cup_nomissing', 'weather', 'web_traffic']
+    ps = [0.5, 0.6, 0.7, 0.8, 0.9]
+    cols = sum([[f'v12_{p}', f'NewOracle{int(p*100)}'] for p in ps], [])
+
+    fig, axs = plt.subplots(2, 2, sharex=True, sharey=True, figsize=get_figsize('LNCS', subplots=(2,2)))
+
+    offset = 0.15
+    width = 0.2
+    positions = sum([[idx - offset, idx + offset] for idx in range(len(cols)//2)], [])
+
+    flierprops = dict(marker='+', markersize=1, alpha=0.5)
+    boxprops = dict(linewidth=0.5)
+    capprops = dict(linewidth=0.5)
+    medianprops = dict()
+    whiskerprops = dict(linewidth=0.5)
+    showflier = False
+
+    for idx, ds_name in enumerate(ds_names):
+        df = pd.read_csv(f'results/{ds_name}_selection.csv').set_index('dataset_names')[cols]
+        ax = axs.ravel()[idx]
+        for c_idx, col_name in enumerate(cols):
+            if c_idx % 2 == 0:
+                boxprops.update({'facecolor': 'C6'})
+            else:
+                boxprops.update({'facecolor': 'C7'})
+            ax.boxplot(df[col_name], patch_artist=True, positions=[positions[c_idx]], widths=width, manage_ticks=False, flierprops=flierprops, boxprops=boxprops, capprops=capprops, whiskerprops=whiskerprops, showfliers=showflier, medianprops=medianprops)
+        ax.set_ylim(-0.05, 1.05)
+        ax.set_xticks(np.arange(5), ps)
+        ax.set_title(DATASET_DICT[ds_name])
+        ax.grid(alpha=0.5, zorder=0, markevery=0.25)
+
+    fig.supxlabel(r'$p$')
+    fig.supylabel(r'Mean Selection of $f_i$ in percent')
+
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.83)
+    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=2, handles=[mpatches.Patch(color='C6', label='AALF'), mpatches.Patch(color='C7', label='Oracle')])
+    fig.savefig('plots/selection_boxplot.pdf')
 
 if __name__ == '__main__':
     #plot_all_selection_percentage()
     #plot_selection_percentage('weather', drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.5', 'v5', 'v8', 'test_1.2', 'v10'])
     #plot_selection_performance(['v9', 'v10', 'v11', 'test_1.0'])
     #plot_selection_percentage_single('web_traffic', ['v11_0.7', 'v10_0.7'])
-    #plot_selection_performance(['v12', 'ade', 'dets', 'knnroc', 'oms'])
+    plot_selection_performance(['v12', 'ade', 'dets', 'knnroc', 'oms'])
     #plot_global_feature_importance()
-    show_empirical_selection_performance()
+    show_empirical_selection_performance_table()
+    show_empirical_selection_performance_boxplot()
 
