@@ -5,8 +5,7 @@ tqdm
 matplotlib
 seedpy
 scipy
-torch
 joblib
 tslearn
-git+https://github.com/MatthiasJakobs/tsx
+git+https://github.com/MatthiasJakobs/tsx@7b5c3c8e166eda9245e689e0927ae53ff9f5c1ca
 git+https://github.com/MatthiasJakobs/critdd

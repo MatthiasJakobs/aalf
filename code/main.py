@@ -65,13 +65,9 @@ def main(to_run):
 
         print('To run', to_run)
 
-        # for ds_index in [454]:
-        #     print(ds_index)
-        #     run_experiment(ds_name, ds_index, X[ds_index], L, horizons[ds_index], test_results[ds_index], test_selection[ds_index], test_gfi[ds_index], lr=lr, max_iter_nn=max_epochs, to_run=to_run)
-        # exit()
-
         log_test, log_selection, log_gfi = zip(*Parallel(n_jobs=-1, backend='loky')(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, horizons[ds_index], test_results[ds_index], test_selection[ds_index], test_gfi[ds_index], lr=lr, max_iter_nn=max_epochs, to_run=to_run) for ds_index in tqdm.tqdm(indices)))
 
+        makedirs('results', exist_ok=True)
         log_test = pd.DataFrame(list(log_test))
         log_test = log_test.set_index('dataset_names')
         log_test.to_csv(f'results/{ds_name}_test.csv')
@@ -158,7 +154,7 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
 
     # - Model selection
 
-    if 'v12' in to_run:
+    if 'v12' in to_run or 'v12_0.5' not in test_results.keys():
         for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
             name, test_selection, gfi = run_v12(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=p)
             if p == 0.9 and gfi is not None:
@@ -170,13 +166,14 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
             test_results[name] = loss_test_test
             selection_results[name] = np.mean(test_selection)
 
-    if 'baselines' in to_run:
+    if 'baselines' in to_run or 'ade' not in test_results.keys():
         name = 'ade'
         ade = ADE(20240212+ds_index)
         try:
             _, test_selection = ade.run(x_val, y_val.squeeze(), np.vstack([nn_preds_val, lin_preds_val]), x_test, y_test.squeeze(), np.vstack([nn_preds_test, lin_preds_test]), only_best=True, _omega=1)
-        except Exception:
+        except Exception as e:
             print('ERROR ade', ds_index)
+            print(e)
             exit()
         test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
         loss_test_test = rmse(test_prediction_test, y_test)
@@ -185,11 +182,12 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
         selection_results[name] = np.mean(test_selection)
 
         name = 'knnroc'
-        knn = KNNRoC([f_c, f_i], random_state=20240212+ds_index)
+        knn = KNNRoC([f_c, f_i])
         try:
             _, test_selection = knn.run(x_val, y_val, x_test)
-        except Exception:
+        except Exception as e:
             print('ERROR knnroc', ds_index)
+            print(e)
             exit()
         test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
         loss_test_test = rmse(test_prediction_test, y_test)
@@ -201,8 +199,9 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
         oms = OMS_ROC([f_c, f_i], nc_max=10, random_state=20240212+ds_index)
         try:
             _, test_selection = oms.run(x_val, y_val, x_test)
-        except Exception:
+        except Exception as e:
             print('ERROR oms', ds_index)
+            print(e)
             exit()
         test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
         loss_test_test = rmse(test_prediction_test, y_test)

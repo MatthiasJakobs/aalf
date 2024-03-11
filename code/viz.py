@@ -1,13 +1,8 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 
-from sktime.clustering.k_medoids import TimeSeriesKMedoids
-from tslearn.utils import to_time_series_dataset
-from tsx.model_selection import ROC_Member
-from sklearn.metrics import silhouette_score
-from cdd_plots import TREATMENT_DICT, DATASET_DICT, DATASET_DICT_SMALL
+from cdd_plots import TREATMENT_DICT, DATASET_DICT
 
 TEMPLATE_WIDTHS = {
     'LNCS': 347.12354
