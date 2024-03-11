@@ -15,9 +15,6 @@ TEMPLATE_WIDTHS = {
 
 def get_figsize(template, height_scale=1, subplots=(1,1)):
 
-    # Using seaborn's style
-    #plt.style.use('seaborn')
-
     tex_fonts = {
         # Use LaTeX to write all text
         "text.usetex": True,
@@ -49,118 +46,6 @@ def get_figsize(template, height_scale=1, subplots=(1,1)):
 
     fig_dim = (fig_width_in, fig_height_in)
     return fig_dim
-
-def cluster_rocs(rocs):
-    # Find cluster with minimal inertia
-    tslearn_formatted = to_time_series_dataset([r.x for r in rocs])
-    l, u = 2, 5
-    best_silhouette = -1
-    best_k = l
-    for k in range(l, u):
-        #km = TimeSeriesKMeans(n_clusters=k, n_init=10, n_jobs=-1, random_state=20231113+k)
-        km = TimeSeriesKMedoids(n_clusters=k, metric='euclidean', random_state=20231113+k)
-        km.fit(np.stack([r.x for r in rocs]))
-        silhouette_ = silhouette_score([r.x for r in rocs], km.labels_, metric='euclidean')
-        if silhouette_ > best_silhouette:
-            best_silhouette = silhouette_
-            best_k = k
-
-    #km = TimeSeriesKMeans(n_clusters=best_k, random_state=20231113+k)
-    km = TimeSeriesKMedoids(n_clusters=best_k, metric='euclidean', random_state=20231113+k)
-    km.fit(np.stack([r.x for r in rocs]))
-    centers = km.cluster_centers_
-    return centers, best_k
-
-def plot_rocs(roc_lin, roc_complex, save_path):
-    # Normalize data
-    norm_roc_lin = []
-    for r in roc_lin:
-        std = np.std(r.x)
-        mu = np.mean(r.x)
-        if std <= 0.01:
-            std = 1
-        _x = ((r.x - mu) / std)
-        norm_roc_lin.append(ROC_Member(_x, (r.y - mu) / std, r.indices))
-
-    norm_roc_ens = []
-    for r in roc_complex:
-        std = np.std(r.x)
-        mu = np.mean(r.x)
-        if std <= 0.01:
-            std = 1
-        _x = ((r.x - mu) / std)
-        norm_roc_ens.append(ROC_Member(_x, (r.y - mu) / std, r.indices))
-
-    fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-    centers, best_k = cluster_rocs(norm_roc_lin)
-    centers = centers.squeeze()
-    print('lin', len(centers), best_k)
-    # Plot linear
-    for cc in centers:
-        axs[0].plot(cc)
-        axs[0].scatter(np.arange(len(cc)), cc)
-        axs[0].set_title(f'Linear RoCs, k={best_k}')
-
-    centers, best_k = cluster_rocs(norm_roc_ens)
-    centers = centers.squeeze()
-    print('ens', len(centers), best_k)
-
-    # Plot ensemble
-    for cc in centers:
-        axs[1].plot(cc)
-        axs[1].scatter(np.arange(len(cc)), cc)
-        axs[1].set_title(f'Ensemble RoCs, k={best_k}')
-
-
-    fig.tight_layout()
-    #fig.savefig(save_path)
-    fig.savefig('test.png')
-    exit()
-
-def plot_selection_percentage(ds_name, drop_columns=None):
-    df = pd.read_csv(f'results/{ds_name}_selection.csv')
-    if drop_columns is not None:
-        df = df.drop(columns=drop_columns)
-    names = df.columns[1:]
-    plt.figure()
-    plt.axhline(0.5, ls='--', alpha=0.5, color='black')
-    plt.violinplot(df.iloc[:, 1:].to_numpy(), showmedians=True)
-    #plt.boxplot(df.iloc[:, 1:].to_numpy())
-    epsilon = 0.05
-    plt.ylim(0-epsilon,1+epsilon)
-    plt.xticks(ticks=np.arange(len(names))+1, labels=names.tolist(), rotation=90)
-    plt.ylabel(r'$p_{linear}$')
-    plt.title(ds_name)
-    plt.tight_layout()
-    plt.savefig(f'plots/selection_{ds_name}.png')
-
-def plot_all_selection_percentage():
-    ds_names = ['web_traffic', 'london_smart_meters_nomissing', 'kdd_cup_nomissing', 'pedestrian_counts', 'weather']
-    drop_columns = ['v4_0.5_calibrated', 'v4_0.5', 'v5', 'v8', 'selBinom0.9', 'selBinom0.95', 'selBinom0.99']
-    width = 6
-    height = len(ds_names)/2 * width
-    fig, axs = plt.subplots(nrows=len(ds_names), ncols=1, sharex=True, sharey=True, figsize=(width, height))
-    names = None
-    for row_idx in range(len(ds_names)):
-        ds_name = ds_names[row_idx]
-        df = pd.read_csv(f'results/{ds_name}_selection.csv')
-        df = df.drop(columns=drop_columns, errors='ignore')
-        if names is None:
-            names = df.columns[1:]
-            print(names)
-
-        ax = axs[row_idx]
-        ax.set_title(ds_name)
-        ax.set_ylabel(r'$p_{linear}$')
-        ax.axhline(0.5, ls='--', alpha=0.5, color='black')
-        ax.violinplot(df.iloc[:, 1:].to_numpy(), showmedians=True)
-
-        epsilon = 0.05
-        ax.set_ylim(0-epsilon,1+epsilon)
-        ax.set_xticks(ticks=np.arange(len(names))+1, labels=names.tolist(), rotation=60)
-
-    fig.tight_layout()
-    fig.savefig('test_all.png')
 
 def _plot_single_selection_performance(ax, idx, ds_name, methods, s=12):
     errors = pd.read_csv(f'results/{ds_name}_test.csv')
@@ -315,57 +200,12 @@ def _show_empirical_selection_performance_graph(ds_name, heightscale=0.8, ax=Non
         fig.savefig(f'plots/selection_conf_{ds_name}.pdf')
     return ax
 
-def show_empirical_selection_performance_boxplot():
-    ds_names = ['pedestrian_counts', 'kdd_cup_nomissing', 'weather', 'web_traffic']
-    ps = [0.5, 0.6, 0.7, 0.8, 0.9]
-    cols = sum([[f'v12_{p}', f'NewOracle{int(p*100)}'] for p in ps], [])
-
-    fig, axs = plt.subplots(2, 2, sharex=True, sharey=True, figsize=get_figsize('LNCS', subplots=(2,2)))
-
-    offset = 0.15
-    width = 0.2
-    positions = sum([[idx - offset, idx + offset] for idx in range(len(cols)//2)], [])
-
-    flierprops = dict(marker='+', markersize=1, alpha=0.5)
-    boxprops = dict(linewidth=0.5)
-    capprops = dict(linewidth=0.5)
-    medianprops = dict()
-    whiskerprops = dict(linewidth=0.5)
-    showflier = False
-
-    for idx, ds_name in enumerate(ds_names):
-        df = pd.read_csv(f'results/{ds_name}_selection.csv').set_index('dataset_names')[cols]
-        ax = axs.ravel()[idx]
-        for c_idx, col_name in enumerate(cols):
-            if c_idx % 2 == 0:
-                boxprops.update({'facecolor': 'C6'})
-            else:
-                boxprops.update({'facecolor': 'C7'})
-            ax.boxplot(df[col_name], patch_artist=True, positions=[positions[c_idx]], widths=width, manage_ticks=False, flierprops=flierprops, boxprops=boxprops, capprops=capprops, whiskerprops=whiskerprops, showfliers=showflier, medianprops=medianprops)
-        ax.set_ylim(-0.05, 1.05)
-        ax.set_xticks(np.arange(5), ps)
-        ax.set_title(DATASET_DICT[ds_name])
-        ax.grid(alpha=0.5, zorder=0, markevery=0.25)
-
-    fig.supxlabel(r'$p$')
-    fig.supylabel(r'Mean Selection of $f_i$ in percent')
-
-    fig.tight_layout()
-    fig.subplots_adjust(top=0.83)
-    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=2, handles=[mpatches.Patch(color='C6', label='AALF'), mpatches.Patch(color='C7', label='Oracle')])
-    fig.savefig('plots/selection_boxplot.pdf')
-
 if __name__ == '__main__':
-    #plot_all_selection_percentage()
-    #plot_selection_percentage('weather', drop_columns=['selBinom0.9', 'selBinom0.95', 'selBinom0.99', 'v4_0.5', 'v5', 'v8', 'test_1.2', 'v10'])
-    #plot_selection_performance(['v9', 'v10', 'v11', 'test_1.0'])
-    #plot_selection_percentage_single('web_traffic', ['v11_0.7', 'v10_0.7'])
     plot_selection_performance(['v12', 'ade', 'dets', 'knnroc', 'oms'])
-    #plot_global_feature_importance()
     _show_empirical_selection_performance_graph('pedestrian_counts')
     _show_empirical_selection_performance_graph('weather')
     _show_empirical_selection_performance_graph('web_traffic')
     _show_empirical_selection_performance_graph('kdd_cup_nomissing')
     show_empirical_selection_performance_graph()
-    #show_empirical_selection_performance_boxplot()
+    plot_global_feature_importance()
 
