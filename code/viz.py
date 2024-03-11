@@ -18,6 +18,7 @@ def get_figsize(template, height_scale=1, subplots=(1,1)):
     tex_fonts = {
         # Use LaTeX to write all text
         "text.usetex": True,
+        "text.latex.preamble": r'\usepackage{bm}',
         "font.family": "serif",
         # Use 10pt font in plots, to match 10pt font in document
         "axes.labelsize": 8,
@@ -126,9 +127,9 @@ def plot_global_feature_importance():
         mus = X.mean(axis=0)
         stds = X.std(axis=0)
 
-        ax.bar(0, mus[0], yerr=stds[0], color='C3', label=r'$(\hat{y}_{t,c}-\hat{y}_{t,i})$' if idx == 0 else '') 
-        ax.bar(1, mus[1], yerr=stds[1], color='C2', label=r'$(\hat{e}_{t,c}-\hat{e}_{t,i})$' if idx == 0 else '') 
-        ax.bar(np.arange(X.shape[-1]-2)+2, mus[2:], yerr=stds[2:], label=r'$x_t$' if idx == 0 else '') 
+        ax.bar(0, mus[0], yerr=stds[0], color='C3', label=r'$(\hat{y}_{t,c}-\hat{y}_{t,i})$' if idx == 0 else '', capsize=2) 
+        ax.bar(1, mus[1], yerr=stds[1], color='C2', label=r'$(\hat{e}_{t,c}-\hat{e}_{t,i})$' if idx == 0 else '', capsize=2) 
+        ax.bar(np.arange(10)+2, mus[2:12], yerr=stds[2:12], label=r'$\bm{x}_t$' if idx == 0 else '', capsize=2) 
 
         ax.set_title(DATASET_DICT.get(ds_name, ds_name))
         ax.set_xticks([])
