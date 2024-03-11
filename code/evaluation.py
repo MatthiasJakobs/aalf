@@ -162,7 +162,6 @@ def make_pretty(styler, to_highlight, save_path, transpose=False, hide_metrics=F
 def plot_table(df, save_path, methods, transpose=False):
 
     metrics = ['RMSE']
-    unused_metrics = [m for m in ALL_METRICS if m not in metrics]
 
     # Drop metrics not used 
     columns_to_keep = [(level_0, level_1) for level_0, level_1 in df.columns if level_1 in metrics]
@@ -182,25 +181,7 @@ def plot_table(df, save_path, methods, transpose=False):
         df = df.T
     df.style.pipe(make_pretty, save_path=save_path, to_highlight=to_highlight, transpose=transpose, hide_metrics=len(metrics)==1)
 
-if __name__ == '__main__':
-
-    #methods = ['lin', 'nn', 'v12_0.5', 'v12_0.9', 'v12_0.95', 'v12_0.99', 'oms', 'knnroc', 'ade', 'dets']
-    methods = ['v12_0.5', 'v12_0.9', 'v12_0.95', 'v12_0.99', 'oms', 'knnroc', 'ade', 'dets']
-    ds_names = ['pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing', 'weather' ]
-
-    EVAL_PATH = 'results/eval.pickle'
-    TABLE_PATH = 'results/metrics_table.tex'
-
-    if not exists(EVAL_PATH):
-        print('recreate', EVAL_PATH)
-        results = main(ds_names, methods)
-        results.to_pickle(EVAL_PATH)
-    else:
-        results = pd.read_pickle(EVAL_PATH)
-
-    plot_table(results, TABLE_PATH, methods, transpose=False)
-
-    # Try to render if possible
+def render_table_as_pdf(TABLE_PATH):
     latex_installed = which('pdflatex') is not None
     if latex_installed:
         # Load output file againg
@@ -230,3 +211,27 @@ if __name__ == '__main__':
         new_path = join(dirname(TABLE_PATH), basename(TABLE_PATH).replace('tex', 'pdf'))
         print(new_path)
         move('tmp.pdf', new_path)
+
+if __name__ == '__main__':
+
+    methods = ['v12_0.5', 'v12_0.9', 'v12_0.95', 'v12_0.99', 'oms', 'knnroc', 'ade', 'dets']
+    full_methods = ['v12_0.5', 'v12_0.6', 'v12_0.7', 'v12_0.8', 'v12_0.9', 'v12_0.95', 'v12_0.99', 'oms', 'knnroc', 'ade', 'dets', 'lin', 'nn' ]
+    ds_names = ['pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing', 'weather' ]
+
+    EVAL_PATH = 'results/eval.pickle'
+    TABLE_PATH = 'results/metrics_table.tex'
+    FULL_TABLE_PATH = 'results/metrics_table_all.tex'
+
+    if not exists(EVAL_PATH):
+        print('recreate', EVAL_PATH)
+        results = main(ds_names, full_methods)
+        results.to_pickle(EVAL_PATH)
+    else:
+        results = pd.read_pickle(EVAL_PATH)
+
+    plot_table(results, TABLE_PATH, methods, transpose=False)
+    render_table_as_pdf(TABLE_PATH)
+
+    # Plot long table for all results
+    plot_table(results, FULL_TABLE_PATH, full_methods, transpose=True)
+    render_table_as_pdf(FULL_TABLE_PATH)
