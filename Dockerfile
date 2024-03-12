@@ -6,6 +6,6 @@ RUN apt install git build-essential -y
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
-RUN apt install texlive-full -y
+RUN apt install texlive-latex-extra -y
 
 WORKDIR /aalf
