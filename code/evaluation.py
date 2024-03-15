@@ -15,6 +15,7 @@ from os import system, remove
 from os.path import basename, exists, dirname, join
 from shutil import which, move
 from subprocess import run
+from utils import smse as standardized_mean_squared_error
 
 ALL_METRICS = ['RMSE', 'MAE', 'MSE']
 
@@ -71,7 +72,7 @@ def main(ds_names, methods):
     rng = np.random.RandomState(20240103)
 
     L = 10
-    results = { method_name: {'Dataset': [], 'MAE': [], 'MSE': [], 'RMSE': []} for method_name in methods}
+    results = { method_name: {'Dataset': [], 'MAE': [], 'MSE': [], 'RMSE': [], 'SMSE': []} for method_name in methods}
 
     for ds_name in ds_names:
         _X, horizons, indices = load_dataset(ds_name)
@@ -82,6 +83,7 @@ def main(ds_names, methods):
         mses = {method_name: 0 for method_name in methods}
         maes = {method_name: 0 for method_name in methods}
         rmses = {method_name: 0 for method_name in methods}
+        smses = {method_name: 0 for method_name in methods}
 
         for ds_index in tqdm.tqdm(indices, desc=ds_name):
             (_, _), (_, _), (_, y_test) = preprocess_data(_X[ds_index], L, horizons[ds_index])
@@ -93,15 +95,18 @@ def main(ds_names, methods):
                 mse = mean_squared_error(y_test, preds)
                 mae = mean_absolute_error(y_test, preds)
                 rmse = mean_squared_error(y_test, preds, squared=False)
+                smse = standardized_mean_squared_error(y_test, preds)
                 mses[method_name] += (mse / len(indices))
                 maes[method_name] += (mae / len(indices))
                 rmses[method_name] += (rmse / len(indices))
+                smses[method_name] += (smse / len(indices))
 
         for method_name in methods:
             results[method_name]['Dataset'].append(DATASET_DICT_SMALL[ds_name])
             results[method_name]['MSE'].append(mses[method_name])
             results[method_name]['MAE'].append(maes[method_name])
             results[method_name]['RMSE'].append(rmses[method_name])
+            results[method_name]['SMSE'].append(smses[method_name])
 
     print(results)
     results = { k: pd.DataFrame(v).set_index('Dataset') for k, v in results.items() }
@@ -215,7 +220,7 @@ def render_table_as_pdf(TABLE_PATH):
 if __name__ == '__main__':
 
     methods = ['v12_0.5', 'v12_0.9', 'v12_0.95', 'v12_0.99', 'oms', 'knnroc', 'ade', 'dets']
-    full_methods = ['v12_0.5', 'v12_0.6', 'v12_0.7', 'v12_0.8', 'v12_0.9', 'v12_0.95', 'v12_0.99', 'oms', 'knnroc', 'ade', 'dets', 'lin', 'nn' ]
+    full_methods = ['MeanValue', 'LastValue', 'v12_0.5', 'v12_0.6', 'v12_0.7', 'v12_0.8', 'v12_0.9', 'v12_0.95', 'v12_0.99', 'oms', 'knnroc', 'ade', 'dets', 'lin', 'nn' ]
     ds_names = ['pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing', 'weather' ]
 
     EVAL_PATH = 'results/eval.pickle'
@@ -228,6 +233,8 @@ if __name__ == '__main__':
         results.to_pickle(EVAL_PATH)
     else:
         results = pd.read_pickle(EVAL_PATH)
+
+    print(results)
 
     plot_table(results, TABLE_PATH, methods, transpose=False)
     render_table_as_pdf(TABLE_PATH)

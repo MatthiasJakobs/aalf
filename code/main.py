@@ -231,6 +231,18 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
         test_results[name] = loss_test_test
         selection_results[name] = np.mean(test_selection)
 
+    name = 'LastValue'
+    test_prediction_test = x_test[:, -1].reshape(-1)
+    loss_test_test = rmse(test_prediction_test, y_test)
+    np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test)
+    test_results[name] = loss_test_test
+
+    name = 'MeanValue'
+    test_prediction_test = x_test.mean(axis=1).reshape(-1)
+    loss_test_test = rmse(test_prediction_test, y_test)
+    np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test)
+    test_results[name] = loss_test_test
+
     return test_results, selection_results, gfi_results
 
 

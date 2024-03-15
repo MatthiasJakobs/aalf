@@ -2,11 +2,16 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from cdd_plots import TREATMENT_DICT, DATASET_DICT
+from cdd_plots import TREATMENT_DICT, DATASET_DICT, COLORMAP
 
 TEMPLATE_WIDTHS = {
     'LNCS': 347.12354
 }
+
+shadow = False
+
+import matplotlib as mpl
+mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=COLORMAP) 
 
 def get_figsize(template, height_scale=1, subplots=(1,1)):
 
@@ -62,7 +67,7 @@ def _plot_single_selection_performance(ax, idx, ds_name, methods, s=12):
             err = [errors[f'v12_{p}'].mean() for p in ps]
 
             ax.plot(sel, err, c=color, alpha=.7, zorder=5)
-            ax.scatter(sel, err, c=color, s=s, label=label if idx == 0 else '', zorder=5)
+            ax.scatter(sel, err, c=color, s=s, marker='^', label=label if idx == 0 else '', zorder=5)
             continue
 
         # Try all other methods
@@ -94,7 +99,7 @@ def plot_selection_percentage_single(ds_name, methods):
     fig.supxlabel(r'Mean Selection of $f_c$ in percent ($\downarrow$)')
     fig.tight_layout()
     fig.subplots_adjust(top=0.80)
-    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3)//2)
+    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3)//2, shadow=shadow)
     fig.savefig(f'plots/scatter_{ds_name}.png')
 
 def plot_selection_performance(methods):
@@ -107,7 +112,7 @@ def plot_selection_performance(methods):
     fig.supxlabel(r'Mean Selection of $f_c$ in percent ($\downarrow$)')
     fig.tight_layout()
     fig.subplots_adjust(top=0.78)
-    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3)//2)
+    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3)//2, shadow=shadow)
     fig.savefig('plots/scatter.png')
     fig.savefig('plots/scatter.pdf')
         
@@ -132,15 +137,16 @@ def plot_global_feature_importance():
     fig.supylabel('Mean Global Feature Importance')
     fig.tight_layout()
     fig.subplots_adjust(top=0.83)
-    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=3)
+    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=3, shadow=shadow)
     fig.savefig(f'plots/gfi.pdf')
 
 def show_empirical_selection_performance_graph():
     ds_names = ['pedestrian_counts', 'kdd_cup_nomissing', 'weather', 'web_traffic']
-    heightscale = 0.5
-    fig, axs = plt.subplots(4, 1, sharex=False, sharey=True, figsize=get_figsize('LNCS', subplots=(4,1), height_scale=heightscale))
+    heightscale = 1.5
+    fig, axs = plt.subplots(2, 2, sharex=False, sharey=True, figsize=get_figsize('LNCS', subplots=(2,2), height_scale=heightscale))
     for i, ds_name in enumerate(ds_names):
-        axs[i] = _show_empirical_selection_performance_graph(ds_name, heightscale=heightscale, ax=axs[i])
+        ax = axs.ravel()[i]
+        ax = _show_empirical_selection_performance_graph(ds_name, heightscale=heightscale, ax=ax, rotate=45)
 
     # Custom legend
     handles, labels = plt.gca().get_legend_handles_labels()
@@ -151,11 +157,11 @@ def show_empirical_selection_performance_graph():
     fig.supxlabel(r'$p$')
     fig.supylabel(r'Mean Selection of $f_i$ in percent')
     fig.tight_layout()
-    fig.subplots_adjust(top=0.90)
-    fig.legend(unique_handles, unique_labels, bbox_to_anchor=(0.5, 1), loc='upper center', ncol=2)
+    fig.subplots_adjust(top=0.85)
+    fig.legend(unique_handles, unique_labels, bbox_to_anchor=(0.5, 1), loc='upper center', ncol=2, shadow=shadow)
     fig.savefig('plots/selection_conf_all.pdf')
 
-def _show_empirical_selection_performance_graph(ds_name, heightscale=0.8, ax=None):
+def _show_empirical_selection_performance_graph(ds_name, heightscale=0.8, ax=None, rotate=None):
     ps = [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
     cols = sum([[f'v12_{p}', f'NewOracle{int(p*100)}'] for p in ps], [])
     df = pd.read_csv(f'results/{ds_name}_selection.csv').set_index('dataset_names')
@@ -192,9 +198,62 @@ def _show_empirical_selection_performance_graph(ds_name, heightscale=0.8, ax=Non
 
     if set_fig:
         fig.tight_layout()
-        fig.legend(loc='center right')
+        fig.legend(loc='center right', shadow=shadow)
         fig.savefig(f'plots/selection_conf_{ds_name}.pdf')
+    if rotate is not None:
+        ax.tick_params(axis='x', labelrotation=rotate)
     return ax
+
+def plot_overall_p():
+    ps = [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
+    cols = [f'v12_{p}' for p in ps]
+
+    df_test = []
+    df_selection = []
+    for ds_name in ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing']:
+        # Losses
+        df = pd.read_csv(f'results/{ds_name}_test.csv').set_index('dataset_names')
+        df = df[cols + ['nn', 'linear']]
+        lin_losses = df.pop('linear')
+        df_test.append(df.div(lin_losses, axis=0))
+        # Selection
+        df = pd.read_csv(f'results/{ds_name}_selection.csv').set_index('dataset_names')
+        df = df[cols]
+        df_selection.append(df)
+
+    df_test = pd.concat(df_test).mean(axis=0)
+    df_selection = pd.concat(df_selection).mean(axis=0)
+
+    # f_c test error
+    fc_loss = df_test.pop('nn')
+    #fi_loss = df_test.pop('linear')
+
+    fig, ax = plt.subplots(1, 1, figsize=get_figsize('LNCS', subplots=(1,1)))
+    color = 'C6'
+    ax.plot(df_selection, df_test, color=color)
+    ax.scatter(df_selection, df_test, marker='^', color=color, label=r'AALF')
+
+    # Construct fill
+    x_intersect = 0.925
+    _x = df_selection[:5].tolist() + [x_intersect]
+    _y = df_test[:5].tolist() + [fc_loss]
+    ax.fill_between(_x, _y, fc_loss, alpha=0.7, color=color)
+
+    ax.axhline(y=fc_loss, color='black', alpha=1, label=r'$f_c$')
+    ax.axhline(y=1, color='black', alpha=1, linestyle='dotted', label=r'$f_i$')
+    ax.axvline(x=x_intersect, color='black', linestyle='--', alpha=0.5)
+    ax.text(0.6, 0.97, r'Improvement over $f_c$', color='black', fontsize='large')
+    ax.text(x_intersect+0.01, 0.965, r'$\hat{p} \approx 0.925$', color='black')
+
+    ax.set_ylabel(r'Normalized RMSE')
+    ax.set_xlabel(r'$p$')
+    ax.set_xlim(df_selection[0], 1)
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.88)
+    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=3, shadow=shadow)
+    fig.savefig('plots/direct_comparison.pdf')
+    fig.savefig('plots/direct_comparison.png')
+
 
 if __name__ == '__main__':
     plot_selection_performance(['v12', 'ade', 'dets', 'knnroc', 'oms'])
@@ -204,4 +263,5 @@ if __name__ == '__main__':
     _show_empirical_selection_performance_graph('kdd_cup_nomissing')
     show_empirical_selection_performance_graph()
     plot_global_feature_importance()
+    plot_overall_p()
 

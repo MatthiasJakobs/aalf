@@ -41,6 +41,8 @@ DATASET_DICT_SMALL = {
     'web_traffic': 'Web'
 }
 
+COLORMAP = ['#e41a1c','#377eb8','#984ea3','#ff7f00','#cccc33','#f781bf','#4daf4a', '#a65628']
+
 def create_cdd_overall(treatment_names):
     ds_names = ['web_traffic', 'kdd_cup_nomissing', 'weather', 'pedestrian_counts']
 
@@ -84,7 +86,6 @@ def create_cdd_overall(treatment_names):
 
 def main():
     print('create overall cdd')
-    create_cdd_overall(treatment_names=['linear', 'nn', 'v12_0.9', 'v12_0.8', 'v12_0.7', 'v12_0.6', 'v12_0.95', 'v12_0.99', 'v12_0.5', 'oms', 'knnroc', 'ade', 'dets'])
-
+    create_cdd_overall(treatment_names=['linear', 'nn', 'v12_0.9', 'v12_0.8', 'v12_0.7', 'v12_0.6', 'v12_0.95', 'v12_0.99', 'v12_0.5', 'oms', 'knnroc', 'ade', 'dets', 'LastValue', 'MeanValue'])
 if __name__ == '__main__':
     main()
