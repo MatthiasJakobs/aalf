@@ -237,7 +237,7 @@ def plot_overall_p():
     x_intersect = 0.925
     _x = df_selection[:5].tolist() + [x_intersect]
     _y = df_test[:5].tolist() + [fc_loss]
-    ax.fill_between(_x, _y, fc_loss, alpha=0.7, color=color)
+    ax.fill_between(_x, _y, fc_loss, alpha=0.7, hatch='/', color=color)
 
     ax.axhline(y=fc_loss, color='black', alpha=1, label=r'$f_c$')
     ax.axhline(y=1, color='black', alpha=1, linestyle='dotted', label=r'$f_i$')
