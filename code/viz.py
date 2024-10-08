@@ -3,9 +3,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from cdd_plots import TREATMENT_DICT, DATASET_DICT, COLORMAP
+from datasets import load_dataset
+from evaluation import preprocess_data
 
 TEMPLATE_WIDTHS = {
-    'LNCS': 347.12354
+    'LNCS': 347.12354,
+    'ICDM': 516.0 / 2, 
 }
 
 shadow = False
@@ -92,32 +95,41 @@ def _plot_single_selection_performance(ax, idx, ds_name, methods, s=12):
     ax.set_title(DATASET_DICT.get(ds_name, ds_name))
     return ax
 
-def plot_selection_percentage_single(ds_name, methods):
+def plot_selection_percentage_single(ds_name, methods, n_cols=None, tight_layout=False, fig_legend=True, s=12):
     fig, ax = plt.subplots(1,1, sharex=True)
-    ax = _plot_single_selection_performance(ax, 0, ds_name, methods)
+    ax = _plot_single_selection_performance(ax, 0, ds_name, methods, s=s)
     fig.supylabel(r'Mean RMSE ($\downarrow$)')
     fig.supxlabel(r'Mean Selection of $f_c$ in percent ($\downarrow$)')
     fig.tight_layout()
     fig.subplots_adjust(top=0.80)
-    fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3)//2, shadow=shadow)
+    if n_cols is None:
+        n_cols = (len(methods)+3)//2
+    if fig_legend:
+        fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=n_cols, shadow=shadow)
+    else:
+        ax.legend(loc='upper right', ncol=n_cols)
+    if tight_layout:
+        fig.tight_layout()
     fig.savefig(f'plots/scatter_{ds_name}.png')
 
 def plot_selection_performance(methods):
     ds_names = ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing']
-    fig, axs = plt.subplots(2,2, sharex=True, figsize=get_figsize('LNCS', subplots=(2,2)))
+    fig, axs = plt.subplots(4,1, sharex=True, figsize=get_figsize('ICDM', subplots=(4,1)))
     for idx, ds_name in enumerate(ds_names):
         ax = axs.ravel()[idx]
         ax = _plot_single_selection_performance(ax, idx, ds_name, methods)
-    fig.supylabel(r'Mean RMSE ($\downarrow$)')
-    fig.supxlabel(r'Mean Selection of $f_c$ in percent ($\downarrow$)')
+        ax.set_ylabel(r'Mean RMSE ($\downarrow$)')
+        ax.set_xlabel(r'Mean Selection of $f_c$ in percent ($\downarrow$)')
+    # fig.supylabel(r'Mean RMSE ($\downarrow$)')
+    # fig.supxlabel(r'Mean Selection of $f_c$ in percent ($\downarrow$)')
     fig.tight_layout()
-    fig.subplots_adjust(top=0.78)
+    fig.subplots_adjust(top=0.92)
     fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=(len(methods)+3)//2, shadow=shadow)
     fig.savefig('plots/scatter.png')
     fig.savefig('plots/scatter.pdf')
         
 def plot_global_feature_importance():
-    fig, axs = plt.subplots(2,2, sharex=True, sharey=True, figsize=get_figsize('LNCS', subplots=(2,2)))
+    fig, axs = plt.subplots(4,1, sharex=True, sharey=True, figsize=get_figsize('ICDM', subplots=(4,1)))
     ds_names = ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing']
     for idx, ds_name in enumerate(ds_names):
         ax = axs.ravel()[idx]
@@ -130,20 +142,22 @@ def plot_global_feature_importance():
         ax.bar(0, mus[0], yerr=stds[0], color='C3', label=r'$(\hat{y}_{t,c}-\hat{y}_{t,i})$' if idx == 0 else '', capsize=2) 
         ax.bar(1, mus[1], yerr=stds[1], color='C2', label=r'$(\hat{e}_{t,c}-\hat{e}_{t,i})$' if idx == 0 else '', capsize=2) 
         ax.bar(np.arange(10)+2, mus[2:12], yerr=stds[2:12], label=r'$\bm{x}_t$' if idx == 0 else '', capsize=2) 
+        ax.set_ylabel('Mean Global Feature Importance')
 
         ax.set_title(DATASET_DICT.get(ds_name, ds_name))
         ax.set_xticks([])
 
-    fig.supylabel('Mean Global Feature Importance')
+    #fig.supylabel('Mean Global Feature Importance')
     fig.tight_layout()
-    fig.subplots_adjust(top=0.83)
+    fig.subplots_adjust(top=0.93)
     fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=3, shadow=shadow)
     fig.savefig(f'plots/gfi.pdf')
+    fig.savefig(f'plots/gfi.png')
 
 def show_empirical_selection_performance_graph():
     ds_names = ['pedestrian_counts', 'kdd_cup_nomissing', 'weather', 'web_traffic']
-    heightscale = 1.5
-    fig, axs = plt.subplots(2, 2, sharex=False, sharey=True, figsize=get_figsize('LNCS', subplots=(2,2), height_scale=heightscale))
+    heightscale = 0.9
+    fig, axs = plt.subplots(4, 1, sharex=False, sharey=True, figsize=get_figsize('ICDM', subplots=(4,1), height_scale=heightscale))
     for i, ds_name in enumerate(ds_names):
         ax = axs.ravel()[i]
         ax = _show_empirical_selection_performance_graph(ds_name, heightscale=heightscale, ax=ax, rotate=45)
@@ -157,8 +171,9 @@ def show_empirical_selection_performance_graph():
     fig.supxlabel(r'$p$')
     fig.supylabel(r'Mean Selection of $f_i$ in percent')
     fig.tight_layout()
-    fig.subplots_adjust(top=0.85)
+    fig.subplots_adjust(top=0.93)
     fig.legend(unique_handles, unique_labels, bbox_to_anchor=(0.5, 1), loc='upper center', ncol=2, shadow=shadow)
+    fig.savefig('plots/selection_conf_all.png')
     fig.savefig('plots/selection_conf_all.pdf')
 
 def _show_empirical_selection_performance_graph(ds_name, heightscale=0.8, ax=None, rotate=None):
@@ -228,7 +243,7 @@ def plot_overall_p():
     fc_loss = df_test.pop('nn')
     #fi_loss = df_test.pop('linear')
 
-    fig, ax = plt.subplots(1, 1, figsize=get_figsize('LNCS', subplots=(1,1)))
+    fig, ax = plt.subplots(1, 1, figsize=get_figsize('ICDM', subplots=(1,1)))
     color = 'C6'
     ax.plot(df_selection, df_test, color=color)
     ax.scatter(df_selection, df_test, marker='^', color=color, label=r'AALF')
@@ -249,19 +264,103 @@ def plot_overall_p():
     ax.set_xlabel(r'$p$')
     ax.set_xlim(df_selection[0], 1)
     fig.tight_layout()
-    fig.subplots_adjust(top=0.88)
+    fig.subplots_adjust(top=0.85)
     fig.legend(bbox_to_anchor=(0.5, 1), loc='upper center', ncol=3, shadow=shadow)
     fig.savefig('plots/direct_comparison.pdf')
     fig.savefig('plots/direct_comparison.png')
 
+def plot_lin_vs_nn():
+    ds_name = 'pedestrian_counts'
+    ds_index = 1
+
+    # Load X
+    X, horizons, indices = load_dataset(ds_name)
+    H = horizons[ds_index]
+    ds_index = indices[ds_index]
+
+    L = 10
+
+    # Load preds
+    lin_preds = np.load(f'preds/{ds_name}/{ds_index}/lin.npy')
+    nn_preds = np.load(f'preds/{ds_name}/{ds_index}/nn.npy')
+
+    (x_train, y_train), (x_val, y_val), (x_test, y_test) = preprocess_data(X[ds_index], L, H)
+    y_test = y_test.squeeze()
+
+    lin_loss = (lin_preds - y_test)**2
+    nn_loss = (nn_preds - y_test)**2
+
+    fig, ax = plt.subplots(1, 1, figsize=get_figsize('LNCS', subplots=(1,1), height_scale=0.75))
+    ax.plot(nn_loss, label='$f_c$', alpha=0.7)
+    ax.plot(lin_loss, label='$f_i$', alpha=0.7)
+    
+    ax.set_ylabel('squared error')
+    ax.set_xlabel('$t$')
+    #ax.set_xlim(4600, 4650)
+    #ax.set_yscale('log')
+    # ax.set_ylim(0, 2.1)
+
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig('plots/loss_comparison.png')
+    fig.savefig('plots/loss_comparison.pdf')
+
+def plot_oracle_dist():
+    ds_name = 'weather'
+    ds_index = 0
+
+    # Load X
+    X, horizons, indices = load_dataset(ds_name)
+    H = horizons[ds_index]
+    ds_index = indices[ds_index]
+
+    L = 10
+
+    # Load preds
+    lin_preds = np.load(f'preds/{ds_name}/{ds_index}/lin.npy')
+    nn_preds = np.load(f'preds/{ds_name}/{ds_index}/nn.npy')
+
+    (x_train, y_train), (x_val, y_val), (x_test, y_test) = preprocess_data(X[ds_index], L, H)
+    y_test = y_test.squeeze()
+
+    lin_preds = lin_preds[400:800]
+    nn_preds = nn_preds[400:800]
+    y_test = y_test[400:800]
+
+    lin_loss = (lin_preds - y_test)**2
+    nn_loss = (nn_preds - y_test)**2
+
+    loss_df = (nn_loss - lin_loss)
+
+    fig, ax = plt.subplots(1, 1, figsize=get_figsize('LNCS', subplots=(1,1), height_scale=1))
+
+    lin_better = np.where(loss_df >= 0)[0]
+    nn_better = np.where(loss_df < 0)[0]
+
+    ax.bar(np.arange(len(loss_df))[lin_better], loss_df[lin_better], color='C1')
+    ax.bar(np.arange(len(loss_df))[nn_better], loss_df[nn_better], color='C0')
+
+    ax.text(0, -1, '$f_c$ better', color='C0')
+    ax.text(0, 1, '$f_i$ better', color='C1')
+    
+    ax.set_ylabel('$\mathcal{L}_{ens} - \mathcal{L}_{linear}$')
+
+    fig.tight_layout()
+    fig.savefig('plots/oracle_dist.png')
+    fig.savefig('plots/oracle_dist.pdf')
+
+
+
 
 if __name__ == '__main__':
-    plot_selection_performance(['v12', 'ade', 'dets', 'knnroc', 'oms'])
-    _show_empirical_selection_performance_graph('pedestrian_counts')
-    _show_empirical_selection_performance_graph('weather')
-    _show_empirical_selection_performance_graph('web_traffic')
-    _show_empirical_selection_performance_graph('kdd_cup_nomissing')
-    show_empirical_selection_performance_graph()
-    plot_global_feature_importance()
-    plot_overall_p()
+    #plot_oracle_dist()
+    # plot_selection_performance(['v12', 'ade', 'dets', 'knnroc', 'oms'])
+    plot_selection_percentage_single('pedestrian_counts', ['v12'], n_cols=2, tight_layout=True, fig_legend=False, s=70)
+    # _show_empirical_selection_performance_graph('pedestrian_counts')
+    # _show_empirical_selection_performance_graph('weather')
+    # _show_empirical_selection_performance_graph('web_traffic')
+    # _show_empirical_selection_performance_graph('kdd_cup_nomissing')
+    # show_empirical_selection_performance_graph()
+    # plot_global_feature_importance()
+    # plot_overall_p()
 

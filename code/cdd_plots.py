@@ -73,6 +73,7 @@ def create_cdd_overall(treatment_names):
         f"total.pdf",
         axis_options = { # style the plot
             "width": "347.12354pt",
+            #"width": "516.0pt",
             "height": "80pt",
         },
         adjustment='bonferroni',
