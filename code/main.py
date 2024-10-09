@@ -154,82 +154,82 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
 
     # - Model selection
 
-    if 'v12' in to_run or 'v12_0.5' not in test_results.keys():
-        for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
-            name, test_selection, gfi = run_v12(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=p)
-            if p == 0.9 and gfi is not None:
-                for feat_idx in range(12):
-                    gfi_results[feat_idx] = gfi[feat_idx]
-            test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-            loss_test_test = rmse(test_prediction_test, y_test)
-            np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
-            test_results[name] = loss_test_test
-            selection_results[name] = np.mean(test_selection)
+    # if 'v12' in to_run or 'v12_0.5' not in test_results.keys():
+    #     for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
+    #         name, test_selection, gfi = run_v12(lin_preds_train, nn_preds_train, y_train, y_test, x_val, y_val, x_test, lin_preds_val, nn_preds_val, lin_preds_test, nn_preds_test, random_state=20231322+ds_index, p=p)
+    #         if p == 0.9 and gfi is not None:
+    #             for feat_idx in range(12):
+    #                 gfi_results[feat_idx] = gfi[feat_idx]
+    #         test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    #         loss_test_test = rmse(test_prediction_test, y_test)
+    #         np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+    #         test_results[name] = loss_test_test
+    #         selection_results[name] = np.mean(test_selection)
 
-    if 'baselines' in to_run or 'ade' not in test_results.keys():
-        name = 'ade'
-        ade = ADE(20240212+ds_index)
-        try:
-            _, test_selection = ade.run(x_val, y_val.squeeze(), np.vstack([nn_preds_val, lin_preds_val]), x_test, y_test.squeeze(), np.vstack([nn_preds_test, lin_preds_test]), only_best=True, _omega=1)
-        except Exception as e:
-            print('ERROR ade', ds_index)
-            print(e)
-            exit()
-        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-        loss_test_test = rmse(test_prediction_test, y_test)
-        np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
-        test_results[name] = loss_test_test
-        selection_results[name] = np.mean(test_selection)
+    # if 'baselines' in to_run or 'ade' not in test_results.keys():
+    #     name = 'ade'
+    #     ade = ADE(20240212+ds_index)
+    #     try:
+    #         _, test_selection = ade.run(x_val, y_val.squeeze(), np.vstack([nn_preds_val, lin_preds_val]), x_test, y_test.squeeze(), np.vstack([nn_preds_test, lin_preds_test]), only_best=True, _omega=1)
+    #     except Exception as e:
+    #         print('ERROR ade', ds_index)
+    #         print(e)
+    #         exit()
+    #     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    #     loss_test_test = rmse(test_prediction_test, y_test)
+    #     np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+    #     test_results[name] = loss_test_test
+    #     selection_results[name] = np.mean(test_selection)
 
-        name = 'knnroc'
-        knn = KNNRoC([f_c, f_i])
-        try:
-            _, test_selection = knn.run(x_val, y_val, x_test)
-        except Exception as e:
-            print('ERROR knnroc', ds_index)
-            print(e)
-            exit()
-        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-        loss_test_test = rmse(test_prediction_test, y_test)
-        np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
-        test_results[name] = loss_test_test
-        selection_results[name] = np.mean(test_selection)
+    #     name = 'knnroc'
+    #     knn = KNNRoC([f_c, f_i])
+    #     try:
+    #         _, test_selection = knn.run(x_val, y_val, x_test)
+    #     except Exception as e:
+    #         print('ERROR knnroc', ds_index)
+    #         print(e)
+    #         exit()
+    #     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    #     loss_test_test = rmse(test_prediction_test, y_test)
+    #     np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+    #     test_results[name] = loss_test_test
+    #     selection_results[name] = np.mean(test_selection)
 
-        name = 'oms'
-        oms = OMS_ROC([f_c, f_i], nc_max=10, random_state=20240212+ds_index)
-        try:
-            _, test_selection = oms.run(x_val, y_val, x_test)
-        except Exception as e:
-            print('ERROR oms', ds_index)
-            print(e)
-            exit()
-        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-        loss_test_test = rmse(test_prediction_test, y_test)
-        np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
-        test_results[name] = loss_test_test
-        selection_results[name] = np.mean(test_selection)
+    #     name = 'oms'
+    #     oms = OMS_ROC([f_c, f_i], nc_max=10, random_state=20240212+ds_index)
+    #     try:
+    #         _, test_selection = oms.run(x_val, y_val, x_test)
+    #     except Exception as e:
+    #         print('ERROR oms', ds_index)
+    #         print(e)
+    #         exit()
+    #     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    #     loss_test_test = rmse(test_prediction_test, y_test)
+    #     np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+    #     test_results[name] = loss_test_test
+    #     selection_results[name] = np.mean(test_selection)
 
-        name = 'dets'
-        dets = DETS()
-        try:
-            _, test_selection = dets.run(x_val, y_val.squeeze(), np.vstack([nn_preds_val, lin_preds_val]), x_test, y_test.squeeze(), np.vstack([nn_preds_test, lin_preds_test]), only_best=True)
-        except AssertionError:
-            print('ERROR dets', ds_index)
-            exit()
-        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-        loss_test_test = rmse(test_prediction_test, y_test)
-        np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
-        test_results[name] = loss_test_test
-        selection_results[name] = np.mean(test_selection)
+    #     name = 'dets'
+    #     dets = DETS()
+    #     try:
+    #         _, test_selection = dets.run(x_val, y_val.squeeze(), np.vstack([nn_preds_val, lin_preds_val]), x_test, y_test.squeeze(), np.vstack([nn_preds_test, lin_preds_test]), only_best=True)
+    #     except AssertionError:
+    #         print('ERROR dets', ds_index)
+    #         exit()
+    #     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    #     loss_test_test = rmse(test_prediction_test, y_test)
+    #     np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+    #     test_results[name] = loss_test_test
+    #     selection_results[name] = np.mean(test_selection)
 
-    for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
-        name = f'NewOracle{int(100*p)}'
-        test_selection = oracle(lin_preds_test, nn_preds_test, y_test, p)
-        test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
-        loss_test_test = rmse(test_prediction_test, y_test)
-        np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
-        test_results[name] = loss_test_test
-        selection_results[name] = np.mean(test_selection)
+    # for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
+    #     name = f'NewOracle{int(100*p)}'
+    #     test_selection = oracle(lin_preds_test, nn_preds_test, y_test, p)
+    #     test_prediction_test = np.choose(test_selection, [nn_preds_test, lin_preds_test])
+    #     loss_test_test = rmse(test_prediction_test, y_test)
+    #     np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
+    #     test_results[name] = loss_test_test
+    #     selection_results[name] = np.mean(test_selection)
 
     name = 'LastValue'
     test_prediction_test = x_test[:, -1].reshape(-1)

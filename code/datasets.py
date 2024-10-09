@@ -33,8 +33,8 @@ def load_dataset(ds_name, fraction=1):
     if ds_name == 'kdd_cup_nomissing':
         indices = [idx for idx in indices if idx not in [248, 251, 249, 267, 247, 252, 262, 250, 205] ]
 
-    if ds_name not in [ 'weather', 'web_traffic' ]:
-        horizons = np.ones((len(X))).astype(np.int8)
+    # if ds_name not in [ 'weather', 'web_traffic' ]:
+    #     horizons = np.ones((len(X))).astype(np.int8)
 
     return X, horizons, indices
 
