@@ -12,13 +12,17 @@ from joblib import Parallel, delayed
 from os.path import exists
 from tsx.model_selection import ADE, DETS, KNNRoC, OMS_ROC
 
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.svm import SVR
+from tsx.models.forecaster.baselines import TableForestRegressor
+
 from selection import run_v12, oracle
 from datasets import load_dataset
-from models import MedianPredictionEnsemble
+from models import MedianPredictionEnsemble, HetEnsemble
 from evaluation import load_models, preprocess_data
 from utils import rmse
 
-def main(to_run):
+def main(to_run, njobs):
     L = 10
 
     ds_names = ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing']
@@ -65,7 +69,7 @@ def main(to_run):
 
         print('To run', to_run)
 
-        log_test, log_selection, log_gfi = zip(*Parallel(n_jobs=-1, backend='loky')(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, horizons[ds_index], test_results[ds_index], test_selection[ds_index], test_gfi[ds_index], lr=lr, max_iter_nn=max_epochs, to_run=to_run) for ds_index in tqdm.tqdm(indices)))
+        log_test, log_selection, log_gfi = zip(*Parallel(n_jobs=njobs, backend='loky')(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, horizons[ds_index], test_results[ds_index], test_selection[ds_index], test_gfi[ds_index], lr=lr, max_iter_nn=max_epochs, to_run=to_run) for ds_index in tqdm.tqdm(indices)))
 
         makedirs('results', exist_ok=True)
         log_test = pd.DataFrame(list(log_test))
@@ -230,6 +234,21 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     #     np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test.reshape(-1))
     #     test_results[name] = loss_test_test
     #     selection_results[name] = np.mean(test_selection)
+    
+    name = 'HetEnsemble'
+    if not exists(f'models/{ds_name}/{ds_index}/HetEnsemble.pickle'):
+        ens = HetEnsemble(random_state=20241011)
+        ens.fit(x_train, y_train)
+        with open(f'models/{ds_name}/{ds_index}/HetEnsemble.pickle', 'wb') as _F:
+            pickle.dump(ens, _F)
+    else:
+        with open(f'models/{ds_name}/{ds_index}/HetEnsemble.pickle', 'rb') as _F:
+            ens = pickle.load(_F)
+
+    test_prediction_test = ens.predict(x_test)
+    loss_test_test = rmse(test_prediction_test.reshape(-1), y_test.reshape(-1))
+    np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test)
+    test_results[name] = loss_test_test
 
     name = 'LastValue'
     test_prediction_test = x_test[:, -1].reshape(-1)
@@ -250,5 +269,6 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='')
     parser.add_argument("--override", help='', nargs='+', default=[])
+    parser.add_argument("--njobs", help='', default=-1)
     args = vars(parser.parse_args())
-    main(args['override'])
+    main(args['override'], args['njobs'])
