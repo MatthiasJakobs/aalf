@@ -2,6 +2,7 @@ import numpy as np
 import pickle
 import torch
 import torch.nn as nn
+import tqdm
 
 import torch.utils
 import torch.utils.data
@@ -16,20 +17,39 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.svm import SVR
 
 from os import makedirs
+from os.path import exists
+
+def fit_basemodels(ds_name, ds_index, x_train, y_train, random_state=None):
+
+    models = {
+        'rf_64_2': RandomForestRegressor(n_estimators=64, max_depth=2, random_state=random_state),
+        'tfr_64_2': TableForestRegressor(n_estimators=64, max_depth=2, random_state=random_state),
+        'rf_64_4': RandomForestRegressor(n_estimators=64, max_depth=4, random_state=random_state),
+        'tfr_64_4': TableForestRegressor(n_estimators=64, max_depth=4, random_state=random_state),
+        'svr': SVR(),
+    }
+
+    for m_name, m in models.items():
+        path = f'models/{ds_name}/{ds_index}/{m_name}.pickle'
+    
+        if not exists(path):
+            models[m_name] = models[m_name].fit(x_train, y_train.reshape(-1))
+            with open(path, 'wb') as F:
+                pickle.dump(m, F)
+        else:
+            with open(path, 'rb') as F:
+                models[m_name] = pickle.load(F)
+
+    return models
 
 class HetEnsemble:
 
-    def __init__(self, random_state=None, agg='mean'):
-        self.random_state = random_state
+    def __init__(self, models, agg='mean'):
+        self.models = models
         self.agg = agg
 
     def fit(self, x_train, y_train):
-        self.models = [
-            RandomForestRegressor(n_estimators=64, random_state=self.random_state),
-            TableForestRegressor(n_estimators=64, random_state=self.random_state),
-            SVR(),
-        ]
-        self.models = [m.fit(x_train, y_train.reshape(-1)) for m in self.models]
+        return self
 
     def predict(self, x_test):
         preds = np.stack([m.predict(x_test) for m in self.models])
@@ -42,98 +62,83 @@ class HetEnsemble:
             raise NotImplementedError('Unknwon aggregation strategy', self.agg)
         return preds
 
-# Inspired by residual block found in ResNets
 class ResidualBlock(nn.Module):
 
-    def __init__(self, L, input_filters, output_filters, batch_norm=False, skip=True, dilation=0):
+    def __init__(self, input_filters, output_filters, dilation=1, batch_norm=True):
         super(ResidualBlock, self).__init__()
-
         self.batch_norm = batch_norm
-
-        self.conv1 = nn.Conv1d(input_filters, output_filters, 3, dilation=2**dilation, padding='same')
-        self.conv2 = nn.Conv1d(output_filters, output_filters, 3, dilation=2**dilation, padding='same')
+        self.conv1 = nn.Conv1d(input_filters, output_filters, 3, bias=not batch_norm, dilation=dilation, padding='same')
+        self.conv2 = nn.Conv1d(output_filters, output_filters, 3, bias=not batch_norm, dilation=dilation, padding='same')
         self.relu1 = nn.ReLU()
         self.relu2 = nn.ReLU()
-        self.skip_weights = nn.Conv1d(input_filters, output_filters, 1, padding='same')
-        self.skip = skip
-        if self.batch_norm:
-            self.bn1 = nn.BatchNorm1d(output_filters)
-            self.bn2 = nn.BatchNorm1d(output_filters)
-        self.dropout = nn.Dropout(0.2)
+        if batch_norm:
+            self.batchnorm_1 = nn.BatchNorm1d(output_filters)
+            self.batchnorm_2 = nn.BatchNorm1d(output_filters)
+        self.skip = nn.Conv1d(input_filters, output_filters, kernel_size=1)
 
     def forward(self, x):
         z = self.conv1(x)
         if self.batch_norm:
-            z = self.bn1(z)
+            z = self.batchnorm_1(z)
         z = self.relu1(z)
-        # DO
-        #z = self.dropout(z)
         z = self.conv2(z)
         if self.batch_norm:
-            z = self.bn2(z)
-        z = self.relu2(z)
-        if self.skip:
-            return self.skip_weights(x) + z
-        return z
+            z = self.batchnorm_2(z)
+        x = self.skip(x) + z
+        return x
 
 class CNN(nn.Module):
 
-    def __init__(self, L, n_filters=32, depth_classification=1, batch_norm=False, n_hidden_neurons=16, n_blocks=1, skip_connections=True, fit_normalized='none', max_epochs=10, lr=2e-3, random_state=None):
+    def __init__(self, L=10, H=1, n_channels=1, depth_feature=2, depth_classification=2, n_hidden_neurons=32, batch_norm=True, max_epochs=10, random_state=None, n_hidden_channels=16, batch_size=64, lr=2e-3):
         super().__init__()
-        self.fit_normalized = fit_normalized
-        self.n_filters = n_filters
+
         self.L = L
+        self.H = H
         self.max_epochs = max_epochs
         self.lr = lr
-        self.device = 'mps'
         self.random_state = random_state
+        self.n_channels = n_channels
+        self.n_hidden_channels = n_hidden_channels
+        self.n_hidden_neurons = n_hidden_neurons
+        self.depth_feature = depth_feature
         self.depth_classification = depth_classification
-        self.feature_extractor = nn.Sequential(
-            *[ResidualBlock(L, 1, n_filters, skip=skip_connections, dilation=i, batch_norm=batch_norm) if i == 0 else ResidualBlock(L, n_filters, n_filters, skip=skip_connections, dilation=i, batch_norm=batch_norm) for i in range(n_blocks)]
-        )
-        self.forecaster = [nn.Flatten()]
-        if depth_classification == 1:
-            self.forecaster.append(nn.Linear(L * n_filters, 1))
-        else:
-            for i in range(depth_classification):
+        self.batch_norm = batch_norm
+        self.device = 'mps'
+        self.batch_size = batch_size
+
+    def build_model(self):
+        with fixedseed(torch, self.random_state):
+            feature_extractor = nn.ModuleList()
+            forecaster = nn.ModuleList()
+
+            for i in range(self.depth_feature):
                 if i == 0:
-                    self.forecaster.append(nn.Linear(L * n_filters, n_hidden_neurons))
-                    self.forecaster.append(nn.ReLU())
-                elif i == depth_classification-1:
-                    self.forecaster.append(nn.Linear(n_hidden_neurons, 1))
+                    feature_extractor.append(ResidualBlock(self.n_channels, self.n_hidden_channels, batch_norm=self.batch_norm, dilation=(2**i)))
                 else:
-                    self.forecaster.append(nn.Linear(n_hidden_neurons, n_hidden_neurons))
-                    self.forecaster.append(nn.ReLU())
-        self.forecaster = nn.Sequential(*self.forecaster)
-        self.model = nn.Sequential(
-            self.feature_extractor,
-            self.forecaster
-        )
+                    feature_extractor.append(ResidualBlock(self.n_hidden_channels, self.n_hidden_channels, batch_norm=self.batch_norm, dilation=(2**i)))
 
-        self.model = nn.Sequential(
-            nn.Conv1d(1, self.n_filters, kernel_size=3, padding='same'),
-            nn.ReLU(),
-            nn.Conv1d(self.n_filters, self.n_filters, kernel_size=3, padding='same'),
-            nn.Flatten(),
-            nn.Linear(L * self.n_filters, 1)
-        )
+            if self.depth_classification == 1:
+                forecaster.append(nn.Linear(self.L * self.n_hidden_channels, self.H))
+            else:
+                for i in range(self.depth_classification):
+                    if i == 0:
+                        forecaster.append(nn.Linear(self.L * self.n_hidden_channels, self.n_hidden_neurons))
+                        forecaster.append(nn.ReLU())
+                    elif i == self.depth_classification-1:
+                        forecaster.append(nn.Linear(self.n_hidden_neurons, self.H))
+                    else:
+                        forecaster.append(nn.Linear(self.n_hidden_neurons, self.n_hidden_neurons))
+                        forecaster.append(nn.ReLU())
 
+        self.model = nn.Sequential(*feature_extractor, nn.Flatten(), *forecaster)
         self.model.to(self.device)
+        #self.model = torch.compile(self.model)
 
-    def forward(self, X):
-        if self.fit_normalized == 'mean':
-            mu = X.mean(axis=-1, keepdims=True)
-            _X = X-mu
-            pred = self.model(_X)
-            pred = (pred.unsqueeze(1) + mu).squeeze(1)
-        elif self.fit_normalized == 'last':
-            lv = X[..., -1:]
-            _X = X-lv
-            pred = self.model(_X)
-            pred = (pred.unsqueeze(1) + lv).squeeze(1)
-        else:
-            pred = self.model(X)
-
+    def forward(self, x):
+        lv = x[..., -1:]
+        x = (x - lv)
+        pred = self.model(x)
+        pred = pred + lv.squeeze()
         return pred
 
     def predict(self, X):
@@ -150,7 +155,9 @@ class CNN(nn.Module):
         return out.numpy()
 
 
-    def fit(self, X, y, val_percent=0.3):
+    def fit(self, X, y, x_val=None, y_val=None):
+        self.build_model()
+        #self.model = nn.Linear(self.L, 1).to(self.device)
         # Convert to torch tensors
         X_tensor = torch.Tensor(X).float().to(self.device)
         y_tensor = torch.Tensor(y).float().to(self.device)
@@ -161,38 +168,55 @@ class CNN(nn.Module):
         self.loss_function = nn.MSELoss()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
-        train_size = int((1-val_percent) * X_tensor.shape[0])
-        # x_train = X_tensor[:train_size]
-        # y_train = y_tensor[:train_size]
         x_train = X_tensor
         y_train = y_tensor
-        # x_val = X_tensor[train_size:]
-        # y_val = y_tensor[train_size:]
+
+        if self.device in ['cuda', 'mps']:
+            pin_memory = True
+        else:
+            pin_memory = False
+
+        if x_val is not None and y_val is not None:
+            x_val = torch.Tensor(x_val).float().to(self.device)
+            y_val = torch.Tensor(y_val).float().to(self.device)
+            if len(x_val.shape) == 2:
+                x_val = x_val.unsqueeze(1)
+
+            ds_val = torch.utils.data.TensorDataset(x_val, y_val)
+            dl_val = torch.utils.data.DataLoader(ds_val, pin_memory=pin_memory, drop_last=True, batch_size=self.batch_size)
+            has_val = True
+        else:
+            has_val = False
 
         ds_train = torch.utils.data.TensorDataset(x_train, y_train)
 
         with fixedseed(torch, self.random_state):
-            dl_train = torch.utils.data.DataLoader(ds_train, drop_last=True, batch_size=64, shuffle=True)
+            dl_train = torch.utils.data.DataLoader(ds_train, pin_memory=pin_memory, drop_last=True, batch_size=self.batch_size, shuffle=True)
 
             # Training loop
             for epoch in range(self.max_epochs):
                 train_losses = []
                 self.model.train()
-                for b_x, b_y in dl_train:
-                    self.optimizer.zero_grad()
+                for b_x, b_y in tqdm.tqdm(dl_train, desc=f'Epoch {epoch}', total=len(dl_train)):
+                    self.optimizer.zero_grad(set_to_none=True)
                     outputs = self.model(b_x).squeeze()
                     loss = self.loss_function(outputs, b_y)
                     loss.backward()
                     self.optimizer.step()
                     train_losses.append(loss.item())
                 
-                # self.model.eval()
-                # with torch.no_grad():
-                #     outputs = self.model(x_val).squeeze()
-                #     val_loss = self.loss_function(outputs, y_val)
+                if has_val:
+                    self.model.eval()
+                    val_losses = []
+                    with torch.no_grad():
+                        for b_x, b_y in dl_val:
+                            outputs = self.model(b_x).squeeze()
+                            loss = self.loss_function(outputs, b_y)
+                            val_losses.append(loss.item())
 
-                #print(f'Epoch {epoch} train loss {np.mean(train_losses):.3f} val loss {val_loss.item():.3f}')
-                #print(f'Epoch {epoch} train loss {np.mean(train_losses):.3f}')
+                    print(f'Epoch {epoch} train loss {np.mean(train_losses):.3f} val loss {np.mean(val_losses):.3f}')
+                else:
+                    print(f'Epoch {epoch} train loss {np.mean(train_losses):.3f}')
 
         self.model = self.model.to('cpu')
         

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 from models import MedianPredictionEnsemble
 from datasets import load_dataset
-from tsx.datasets import windowing
+from tsx.datasets import windowing, split_proportion
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from itertools import product
 from cdd_plots import DATASET_DICT_SMALL
@@ -29,20 +29,9 @@ def load_models(ds_name, ds_index):
 
 def preprocess_data(X, L, H):
     # Split and normalize data
-    end_train = int(len(X) * 0.5)
-    end_val = end_train + int(len(X) * 0.25)
-    X_train = X[:end_train]
-    X_val = X[end_train:end_val]
-    X_test = X[end_val:]
-
-    mu = np.mean(X_train)
-    std = np.std(X_train)
-
-    X = (X - mu) / std
-
-    X_train = X[:end_train]
-    X_val = X[end_train:end_val]
-    X_test = X[end_val:]
+    X_train, _ = split_proportion(X, (0.5, 0.5))
+    X = (X - np.mean(X)) / np.std(X)
+    X_train, X_val, X_test = split_proportion(X, (0.5, 0.25, 0.25))
 
     # Instead of forecasting t+1, forecast t+j
     x_train, y_train = windowing(X_train, L=L, H=H)

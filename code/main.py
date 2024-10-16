@@ -1,3 +1,4 @@
+import torch
 import tqdm
 import numpy as np
 import pandas as pd
@@ -18,14 +19,15 @@ from tsx.models.forecaster.baselines import TableForestRegressor
 
 from selection import run_v12, oracle
 from datasets import load_dataset
-from models import MedianPredictionEnsemble, HetEnsemble
+from models import MedianPredictionEnsemble, HetEnsemble, fit_basemodels, CNN
 from evaluation import load_models, preprocess_data
 from utils import rmse
 
-def main(to_run, njobs):
+def main(to_run, njobs, debug=False):
     L = 10
 
-    ds_names = ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing']
+    #ds_names = ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing']
+    ds_names = ['pedestrian_counts']
 
     if to_run is None:
         to_run = []
@@ -34,7 +36,21 @@ def main(to_run, njobs):
         log_test = []
         log_selection = []
 
-        X, horizons, indices = load_dataset(ds_name, fraction=1)
+        if debug:
+            fraction = 0.1
+        else:
+            fraction = 1
+
+        if ds_name == 'pedestrian_counts':
+            L = 48
+
+        #X, horizons, indices = load_dataset(ds_name, fraction=fraction)
+        from gluonts.dataset.repository import get_dataset
+        from gluonts.dataset.util import to_pandas
+        ds = get_dataset(ds_name)
+        X = [to_pandas(_x).to_numpy() for _x in iter(ds.train)]
+        horizons = [1 for _ in range(len(X))]
+        indices = [i for i in range(len(X))]
 
         if ds_name == 'web_traffic':
             lr = 1e-5
@@ -97,18 +113,21 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
         print('to remove', ds_name, ds_index)
         return test_results, selection_results, gfi_results
 
-    if exists(f'models/{ds_name}/{ds_index}/linear.pickle') and exists(f'models/{ds_name}/{ds_index}/nns/0.pickle'):
-        f_i, f_c = load_models(ds_name, ds_index)
-    else:
-        f_i = LinearRegression()
-        f_i.fit(x_train, y_train)
-        with open(f'models/{ds_name}/{ds_index}/linear.pickle', 'wb') as f:
-            pickle.dump(f_i, f)
+    # if exists(f'models/{ds_name}/{ds_index}/linear.pickle') and exists(f'models/{ds_name}/{ds_index}/nns/0.pickle'):
+    #     f_i, f_c = load_models(ds_name, ds_index)
+    # else:
+    #     f_i = LinearRegression()
+    #     f_i.fit(x_train, y_train)
+    #     with open(f'models/{ds_name}/{ds_index}/linear.pickle', 'wb') as f:
+    #         pickle.dump(f_i, f)
 
-        with fixedseed(np, 20231103):
-            f_c = MedianPredictionEnsemble([MLPRegressor((28,), learning_rate_init=lr, max_iter=max_iter_nn) for _ in range(10)])
-            f_c.fit(x_train, y_train.squeeze())
-            f_c.save_model(ds_name, ds_index)
+    #     with fixedseed(np, 20231103):
+    #         f_c = MedianPredictionEnsemble([MLPRegressor((28,), learning_rate_init=lr, max_iter=max_iter_nn) for _ in range(10)])
+    #         f_c.fit(x_train, y_train.squeeze())
+    #         f_c.save_model(ds_name, ds_index)
+
+    f_i = LinearRegression()
+    f_i.fit(x_train, y_train)
 
     makedirs(f'preds/{ds_name}/{ds_index}', exist_ok=True)
 
@@ -119,42 +138,42 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     np.save(f'preds/{ds_name}/{ds_index}/lin.npy', lin_preds_test.reshape(-1))
     test_results['linear'] = loss_i_test
 
-    nn_preds_train = f_c.predict(x_train)
-    nn_preds_val = f_c.predict(x_val)
-    nn_preds_test = f_c.predict(x_test)
-    loss_nn_test = rmse(nn_preds_test, y_test)
-    np.save(f'preds/{ds_name}/{ds_index}/nn.npy', nn_preds_test.reshape(-1))
-    test_results['nn'] = loss_nn_test
+    # nn_preds_train = f_c.predict(x_train)
+    # nn_preds_val = f_c.predict(x_val)
+    # nn_preds_test = f_c.predict(x_test)
+    # loss_nn_test = rmse(nn_preds_test, y_test)
+    # np.save(f'preds/{ds_name}/{ds_index}/nn.npy', nn_preds_test.reshape(-1))
+    # test_results['nn'] = loss_nn_test
 
-    closeness_threshold = 1e-6
+    # closeness_threshold = 1e-6
 
-    lin_val_error = (lin_preds_val.squeeze()-y_val.squeeze())**2
-    nn_val_error = (nn_preds_val.squeeze()-y_val.squeeze())**2
-    lin_val_better = np.where(lin_val_error-nn_val_error <= closeness_threshold)[0]
-    nn_val_better = np.array([idx for idx in range(len(lin_val_error)) if idx not in lin_val_better]).astype(np.int32)
-    assert len(lin_val_better) + len(nn_val_better) == len(lin_val_error)
+    # lin_val_error = (lin_preds_val.squeeze()-y_val.squeeze())**2
+    # nn_val_error = (nn_preds_val.squeeze()-y_val.squeeze())**2
+    # lin_val_better = np.where(lin_val_error-nn_val_error <= closeness_threshold)[0]
+    # nn_val_better = np.array([idx for idx in range(len(lin_val_error)) if idx not in lin_val_better]).astype(np.int32)
+    # assert len(lin_val_better) + len(nn_val_better) == len(lin_val_error)
 
-    lin_test_error = (lin_preds_test.squeeze()-y_test.squeeze())**2
-    nn_test_error = (nn_preds_test.squeeze()-y_test.squeeze())**2
-    lin_test_better = np.where(lin_test_error-nn_test_error <= closeness_threshold)[0]
-    nn_test_better = np.array([idx for idx in range(len(lin_test_error)) if idx not in lin_test_better]).astype(np.int32)
-    assert len(lin_test_better) + len(nn_test_better) == len(lin_test_error)
+    # lin_test_error = (lin_preds_test.squeeze()-y_test.squeeze())**2
+    # nn_test_error = (nn_preds_test.squeeze()-y_test.squeeze())**2
+    # lin_test_better = np.where(lin_test_error-nn_test_error <= closeness_threshold)[0]
+    # nn_test_better = np.array([idx for idx in range(len(lin_test_error)) if idx not in lin_test_better]).astype(np.int32)
+    # assert len(lin_test_better) + len(nn_test_better) == len(lin_test_error)
 
     # -------------------------------- Model selection
 
-    lin_preds_val = lin_preds_val.squeeze()
-    lin_preds_test = lin_preds_test.squeeze()
-    nn_preds_val = nn_preds_val.squeeze()
-    nn_preds_test = nn_preds_test.squeeze()
-    y_val = y_val.squeeze()
-    y_test = y_test.squeeze()
+    # lin_preds_val = lin_preds_val.squeeze()
+    # lin_preds_test = lin_preds_test.squeeze()
+    # nn_preds_val = nn_preds_val.squeeze()
+    # nn_preds_test = nn_preds_test.squeeze()
+    # y_val = y_val.squeeze()
+    # y_test = y_test.squeeze()
 
-    optimal_selection_test = (lin_test_error - nn_test_error) <= closeness_threshold
+    # optimal_selection_test = (lin_test_error - nn_test_error) <= closeness_threshold
 
-    optimal_prediction_test = np.choose(optimal_selection_test, [nn_preds_test, lin_preds_test])
-    loss_optimal_test = rmse(optimal_prediction_test, y_test)
-    test_results['selOpt'] = loss_optimal_test
-    selection_results['selOpt'] = np.mean(optimal_selection_test)
+    # optimal_prediction_test = np.choose(optimal_selection_test, [nn_preds_test, lin_preds_test])
+    # loss_optimal_test = rmse(optimal_prediction_test, y_test)
+    # test_results['selOpt'] = loss_optimal_test
+    # selection_results['selOpt'] = np.mean(optimal_selection_test)
 
     # - Model selection
 
@@ -235,20 +254,36 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     #     test_results[name] = loss_test_test
     #     selection_results[name] = np.mean(test_selection)
     
-    name = 'HetEnsemble'
-    if not exists(f'models/{ds_name}/{ds_index}/HetEnsemble.pickle'):
-        ens = HetEnsemble(random_state=20241011)
-        ens.fit(x_train, y_train)
-        with open(f'models/{ds_name}/{ds_index}/HetEnsemble.pickle', 'wb') as _F:
-            pickle.dump(ens, _F)
-    else:
-        with open(f'models/{ds_name}/{ds_index}/HetEnsemble.pickle', 'rb') as _F:
-            ens = pickle.load(_F)
+    # basemodels = fit_basemodels(ds_name, ds_index, x_train, y_train, random_state=20241014)
+    # for m_name, m in basemodels.items():
+    #     test_prediction_test = m.predict(x_test).reshape(-1)
+    #     loss_test_test = rmse(test_prediction_test, y_test.reshape(-1))
+    #     test_results[m_name] = loss_test_test
 
-    test_prediction_test = ens.predict(x_test)
-    loss_test_test = rmse(test_prediction_test.reshape(-1), y_test.reshape(-1))
-    np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test)
-    test_results[name] = loss_test_test
+    # ens = HetEnsemble(list(basemodels.values()))
+    # test_prediction_test = ens.predict(x_test).reshape(-1)
+    # loss_test_test = rmse(test_prediction_test, y_test.reshape(-1))
+    # test_results['HetEnsemble'] = loss_test_test
+
+    if not exists(f'models/{ds_name}/{ds_index}/cnn.pickle'):
+        with fixedseed(torch, 20241012):
+            cnn = CNN(L)
+            cnn.fit(x_train, y_train.squeeze())
+        with open(f'models/{ds_name}/{ds_index}/cnn.pickle', 'wb') as f:
+            pickle.dump(cnn, f)
+    else:
+        with open(f'models/{ds_name}/{ds_index}/cnn.pickle', 'rb') as f:
+            cnn = pickle.load(f)
+
+    test_prediction_test = cnn.predict(x_test).reshape(-1)
+    loss_test_test = rmse(test_prediction_test, y_test.reshape(-1))
+    test_results['cnn'] = loss_test_test
+
+    with open(f'models/cnn_{ds_name}.pickle', 'rb') as f:
+        global_cnn = pickle.load(f)
+    test_prediction_test = global_cnn.predict(x_test).reshape(-1)
+    loss_test_test = rmse(test_prediction_test, y_test.reshape(-1))
+    test_results['global_cnn'] = loss_test_test
 
     name = 'LastValue'
     test_prediction_test = x_test[:, -1].reshape(-1)
@@ -269,6 +304,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='')
     parser.add_argument("--override", help='', nargs='+', default=[])
-    parser.add_argument("--njobs", help='', default=-1)
+    parser.add_argument("--debug", help='', type=bool, default=False)
+    parser.add_argument("--njobs", help='', type=int, default=-1)
     args = vars(parser.parse_args())
-    main(args['override'], args['njobs'])
+    main(args['override'], args['njobs'], debug=args['debug'])
