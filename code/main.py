@@ -265,19 +265,19 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     # loss_test_test = rmse(test_prediction_test, y_test.reshape(-1))
     # test_results['HetEnsemble'] = loss_test_test
 
-    if not exists(f'models/{ds_name}/{ds_index}/cnn.pickle'):
-        with fixedseed(torch, 20241012):
-            cnn = CNN(L)
-            cnn.fit(x_train, y_train.squeeze())
-        with open(f'models/{ds_name}/{ds_index}/cnn.pickle', 'wb') as f:
-            pickle.dump(cnn, f)
-    else:
-        with open(f'models/{ds_name}/{ds_index}/cnn.pickle', 'rb') as f:
-            cnn = pickle.load(f)
+    # if not exists(f'models/{ds_name}/{ds_index}/cnn.pickle'):
+    #     with fixedseed(torch, 20241012):
+    #         cnn = CNN(L)
+    #         cnn.fit(x_train, y_train.squeeze())
+    #     with open(f'models/{ds_name}/{ds_index}/cnn.pickle', 'wb') as f:
+    #         pickle.dump(cnn, f)
+    # else:
+    #     with open(f'models/{ds_name}/{ds_index}/cnn.pickle', 'rb') as f:
+    #         cnn = pickle.load(f)
 
-    test_prediction_test = cnn.predict(x_test).reshape(-1)
-    loss_test_test = rmse(test_prediction_test, y_test.reshape(-1))
-    test_results['cnn'] = loss_test_test
+    # test_prediction_test = cnn.predict(x_test).reshape(-1)
+    # loss_test_test = rmse(test_prediction_test, y_test.reshape(-1))
+    # test_results['cnn'] = loss_test_test
 
     with open(f'models/cnn_{ds_name}.pickle', 'rb') as f:
         global_cnn = pickle.load(f)

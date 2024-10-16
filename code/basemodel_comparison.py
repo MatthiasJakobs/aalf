@@ -7,7 +7,7 @@ def main():
     #ds_names = ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing']
     ds_names = ['pedestrian_counts']
     summary = {}
-    basemodels = ['linear', 'LastValue', 'MeanValue', 'cnn', 'global_cnn']
+    basemodels = ['linear', 'LastValue', 'MeanValue', 'global_cnn']
 
     for ds_name in ds_names:
         df = pd.read_csv(f'results/{ds_name}_test.csv', header=0)
