@@ -1,13 +1,9 @@
-import numpy as np
 import pandas as pd
-from datasets import load_dataset
-from evaluation import load_models, preprocess_data
 
 def main():
-    #ds_names = ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing']
-    ds_names = ['pedestrian_counts']
+    ds_names = ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing', 'nn5']
     summary = {}
-    basemodels = ['linear', 'LastValue', 'MeanValue', 'global_cnn']
+    basemodels = ['linear', 'LastValue', 'MeanValue', 'trf-raw', 'global_cnn']
 
     for ds_name in ds_names:
         df = pd.read_csv(f'results/{ds_name}_test.csv', header=0)

@@ -3,40 +3,43 @@ import pandas as pd
 
 from tsx.datasets.monash import load_monash
 from cdd_plots import DATASET_DICT
+from config import tsx_to_gluon
+from gluonts.dataset.util import to_pandas
+from gluonts.dataset.repository import get_dataset
+from tsx.utils import string_to_randomstate
+
+def _load_from_gluon(ds_name):
+    ds_name = tsx_to_gluon[ds_name]
+    ds = get_dataset(ds_name)
+    X = [to_pandas(_x).to_numpy() for _x in iter(ds.train)]
+
+    return X
 
 def load_dataset(ds_name, fraction=1):
+    X = _load_from_gluon(ds_name)
+    rng = string_to_randomstate(ds_name)
+
     if ds_name == 'web_traffic':
-        X, horizons = load_monash('web_traffic_daily_nomissing', return_horizon=True)
-        X = np.vstack([x.to_numpy() for x in X['series_value']])
+        X = np.vstack(X)
         # Find ones without missing data
         to_take = np.where((X==0).sum(axis=1) == 0)[0]
         # Subsample since this one is too large
-        to_take = np.random.RandomState(1234).choice(to_take, size=3000, replace=False)
-        X = X[to_take]
-        horizons = [horizons[i] for i in to_take]
-    else:
-        X, horizons = load_monash(ds_name, return_horizon=True)
-        X = X['series_value']
+        to_take = rng.choice(to_take, size=3000, replace=False)
+        X = X[to_take].tolist()
 
     # Choose subset
-    horizons = np.array(horizons)
-    rng = np.random.RandomState(12389182)
-    #run_size = len(X)
     run_size = int(len(X)*fraction)
     indices = rng.choice(np.arange(len(X)), size=run_size, replace=False)
     
     # Remove datapoints that contain NaNs after preprocessing (for example, if all values are the same)
-    if ds_name == 'london_smart_meters_nomissing':
-        indices = [idx for idx in indices if idx not in [ 65, 5531, 4642, 2846, 179, 2877, 5061, 920, 1440, 3076, 5538 ] ]
     if ds_name == 'weather':
         indices = [idx for idx in indices if idx not in [943, 568, 2221, 2054, 537, 1795, 1215, 891, 1191, 1639, 678, 379, 1048, 1938, 1264, 2010, 1308, 1450, 1961, 1475  ] ]
     if ds_name == 'kdd_cup_nomissing':
         indices = [idx for idx in indices if idx not in [248, 251, 249, 267, 247, 252, 262, 250, 205] ]
 
-    # if ds_name not in [ 'weather', 'web_traffic' ]:
-    #     horizons = np.ones((len(X))).astype(np.int8)
+    X = [X[idx] for idx in indices]
 
-    return X, horizons, indices
+    return X 
 
 def get_dataset_statistics():
     ds_names = ['web_traffic', 'weather','kdd_cup_nomissing', 'pedestrian_counts']
@@ -44,8 +47,8 @@ def get_dataset_statistics():
     df = pd.DataFrame(columns=['Dataset name', 'Nr. Datapoints', 'Min. Length', 'Max. Length', 'Avg. Length'])
     df = df.set_index('Dataset name')
     for ds_name in ds_names:
-        X, _, indices = load_dataset(ds_name)
-        n_datapoints = len(indices)
+        X = load_dataset(ds_name)
+        n_datapoints = len(X)
         total += n_datapoints
         lengths = [len(x) for x in X]
         df.loc[DATASET_DICT.get(ds_name, ds_name)] = (int(n_datapoints), int(min(lengths)), int(max(lengths)), np.mean(lengths))

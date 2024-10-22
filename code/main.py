@@ -22,12 +22,11 @@ from datasets import load_dataset
 from models import MedianPredictionEnsemble, HetEnsemble, fit_basemodels, CNN
 from evaluation import load_models, preprocess_data
 from utils import rmse
+from config import Ls
 
 def main(to_run, njobs, debug=False):
-    L = 10
 
-    #ds_names = ['weather', 'pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing']
-    ds_names = ['pedestrian_counts']
+    ds_names = ['nn5']
 
     if to_run is None:
         to_run = []
@@ -41,25 +40,10 @@ def main(to_run, njobs, debug=False):
         else:
             fraction = 1
 
-        if ds_name == 'pedestrian_counts':
-            L = 48
+        L = Ls[ds_name]
+        X = load_dataset(ds_name, fraction=fraction)
 
-        #X, horizons, indices = load_dataset(ds_name, fraction=fraction)
-        from gluonts.dataset.repository import get_dataset
-        from gluonts.dataset.util import to_pandas
-        ds = get_dataset(ds_name)
-        X = [to_pandas(_x).to_numpy() for _x in iter(ds.train)]
-        horizons = [1 for _ in range(len(X))]
-        indices = [i for i in range(len(X))]
-
-        if ds_name == 'web_traffic':
-            lr = 1e-5
-            max_epochs = 10000
-        else:
-            lr = 1e-3
-            max_epochs = 500
-
-        print(ds_name, 'n_series', len(indices))
+        print(ds_name, 'n_series', len(X))
 
         # Load previous results (if available), otherwise create empty
         if exists(f'results/{ds_name}_test.csv'):
@@ -85,7 +69,7 @@ def main(to_run, njobs, debug=False):
 
         print('To run', to_run)
 
-        log_test, log_selection, log_gfi = zip(*Parallel(n_jobs=njobs, backend='loky')(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, horizons[ds_index], test_results[ds_index], test_selection[ds_index], test_gfi[ds_index], lr=lr, max_iter_nn=max_epochs, to_run=to_run) for ds_index in tqdm.tqdm(indices)))
+        log_test, log_selection, log_gfi = zip(*Parallel(n_jobs=njobs, backend='loky')(delayed(run_experiment)(ds_name, ds_index, X[ds_index], L, 1, test_results[ds_index], test_selection[ds_index], test_gfi[ds_index], to_run=to_run) for ds_index in tqdm.trange(len(X))))
 
         makedirs('results', exist_ok=True)
         log_test = pd.DataFrame(list(log_test))
@@ -129,14 +113,21 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     f_i = LinearRegression()
     f_i.fit(x_train, y_train)
 
-    makedirs(f'preds/{ds_name}/{ds_index}', exist_ok=True)
+    #makedirs(f'preds/{ds_name}/{ds_index}', exist_ok=True)
 
     lin_preds_train = f_i.predict(x_train)
     lin_preds_val = f_i.predict(x_val)
     lin_preds_test = f_i.predict(x_test)
     loss_i_test = rmse(lin_preds_test, y_test)
-    np.save(f'preds/{ds_name}/{ds_index}/lin.npy', lin_preds_test.reshape(-1))
+    #np.save(f'preds/{ds_name}/{ds_index}/lin.npy', lin_preds_test.reshape(-1))
     test_results['linear'] = loss_i_test
+
+    if not 'trf-raw' in test_results:
+        rf = TableForestRegressor(n_estimators=128, include_raw=True, random_state=19278161)
+        rf.fit(x_train, y_train.squeeze())
+        rf_preds_test = rf.predict(x_test)
+        loss_test = rmse(rf_preds_test, y_test)
+        test_results['trf-raw'] = loss_test
 
     # nn_preds_train = f_c.predict(x_train)
     # nn_preds_val = f_c.predict(x_val)
@@ -288,13 +279,13 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     name = 'LastValue'
     test_prediction_test = x_test[:, -1].reshape(-1)
     loss_test_test = rmse(test_prediction_test, y_test)
-    np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test)
+    #np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test)
     test_results[name] = loss_test_test
 
     name = 'MeanValue'
     test_prediction_test = x_test.mean(axis=1).reshape(-1)
     loss_test_test = rmse(test_prediction_test, y_test)
-    np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test)
+    #np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test)
     test_results[name] = loss_test_test
 
     return test_results, selection_results, gfi_results

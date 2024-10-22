@@ -6,5 +6,7 @@ matplotlib
 seedpy
 scipy
 joblib
-git+https://github.com/MatthiasJakobs/tsx@7b5c3c8e166eda9245e689e0927ae53ff9f5c1ca
+git+https://github.com/MatthiasJakobs/tsx@ff6509b 
 git+https://github.com/MatthiasJakobs/critdd
+gluonts==0.14.3
+ujson

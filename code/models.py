@@ -15,6 +15,8 @@ from seedpy import fixedseed
 from tsx.models.forecaster.baselines import TableForestRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.svm import SVR
+from tsx.utils import get_device
+from torchsummary import summary
 
 from os import makedirs
 from os.path import exists
@@ -103,7 +105,7 @@ class CNN(nn.Module):
         self.depth_feature = depth_feature
         self.depth_classification = depth_classification
         self.batch_norm = batch_norm
-        self.device = 'mps'
+        self.device = get_device()
         self.batch_size = batch_size
 
     def build_model(self):
@@ -158,6 +160,7 @@ class CNN(nn.Module):
     def fit(self, X, y, x_val=None, y_val=None):
         self.build_model()
         #self.model = nn.Linear(self.L, 1).to(self.device)
+        summary(self.model, (1, X.shape[-1]))
         # Convert to torch tensors
         X_tensor = torch.Tensor(X).float().to(self.device)
         y_tensor = torch.Tensor(y).float().to(self.device)
@@ -171,10 +174,7 @@ class CNN(nn.Module):
         x_train = X_tensor
         y_train = y_tensor
 
-        if self.device in ['cuda', 'mps']:
-            pin_memory = True
-        else:
-            pin_memory = False
+        pin_memory = False
 
         if x_val is not None and y_val is not None:
             x_val = torch.Tensor(x_val).float().to(self.device)
