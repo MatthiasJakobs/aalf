@@ -1,18 +1,19 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
+from tsx.utils import get_device
+from seedpy import fixedseed
 
 # Define the LSTM-based model for time series forecasting
 class DeepAR(nn.Module):
-    def __init__(self, input_size=1, hidden_size=50, num_layers=2, dropout=0.1, device='cpu'):
+    def __init__(self, n_channel=1, hidden_size=50, num_layers=2, dropout=0.1, learning_rate=2e-3, max_epochs=100, device=None):
         super(DeepAR, self).__init__()
-        self.device = device
+        self.device = get_device() if device is None else device
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
-        self.mean_estimator = nn.Linear(hidden_size*num_layers, 1)
-        self.var_estimator = nn.Linear(hidden_size*num_layers, 1)
+        self.lstm = nn.LSTM(n_channel, hidden_size, num_layers, batch_first=True, dropout=dropout).to(self.device)
+        self.mean_estimator = nn.Linear(hidden_size*num_layers, 1).to(self.device)
+        self.var_estimator = nn.Linear(hidden_size*num_layers, 1).to(self.device)
 
         # initialize LSTM forget gate bias to be 1 as recommanded by http://proceedings.mlr.press/v37/jozefowicz15.pdf
         for names in self.lstm._all_weights:
@@ -21,6 +22,9 @@ class DeepAR(nn.Module):
                 n = bias.size(0)
                 start, end = n // 4, n // 2
                 bias.data[start:end].fill_(1.)
+
+        self.learning_rate = learning_rate
+        self.max_epochs = max_epochs
 
     def initialize_hidden(self, batch_size):
         h0 = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(self.device)
@@ -38,6 +42,7 @@ class DeepAR(nn.Module):
     @torch.no_grad()
     def predict(self, x, length=100, num_samples=10):
         self.eval()
+        x = torch.from_numpy(x).float().to(self.device)
         batch_size = x.shape[0]
         input_size = x.shape[1]
         if len(x.shape) == 2:
@@ -53,7 +58,7 @@ class DeepAR(nn.Module):
         # Next, do the actual prediction
         for j in range(num_samples):
             n_h0, n_c0 = h0.clone(), c0.clone()
-            buffer = torch.cat([x[:, -1:], torch.zeros((batch_size, length, x.shape[-1]))], axis=1)
+            buffer = torch.cat([x[:, -1:], torch.zeros((batch_size, length, x.shape[-1])).to(self.device)], axis=1)
             for t in range(length):
                 mu, sigma, n_h0, n_c0 = self(buffer[:, t].unsqueeze(1), n_h0, n_c0)
                 dist = torch.distributions.normal.Normal(mu, sigma)
@@ -64,50 +69,62 @@ class DeepAR(nn.Module):
 
         return preds.numpy()
 
+    # X.shape = (n_windows, L) or (n_windows, L, n_channels)
+    # y is not used
+    def fit(self, X, y=None):
+        n_samples = X.shape[0]
+        L  = X.shape[1]
+
+        X = torch.from_numpy(X).float()
+        y = X.clone()
+
+        if len(X.shape) == 2:
+            X = X.unsqueeze(-1)
+
+        n_channels = X.shape[2]
+
+        # Offset inputs by one 
+        X = torch.cat([torch.zeros(n_samples, 1, n_channels), X[:, :-1]], axis=1)
+
+        X = X.to(self.device)
+        y = y.to(self.device)
+
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        for epoch in range(self.max_epochs):
+            self.train()
+            optimizer.zero_grad()
+
+            h0, c0 = self.initialize_hidden(X.shape[0])
+            loss = 0
+
+            for t in range(L):
+                mu, sigma, h0, c0 = self(X[:, t].unsqueeze(1).clone(), h0, c0)
+                ll = torch.distributions.normal.Normal(mu, sigma).log_prob(y[:, t]).mean()
+                loss += ll
+            
+            loss = -loss
+            loss.backward()
+            optimizer.step()
+
+            print(f'Epoch [{epoch+1}/{self.max_epochs}], Loss: {loss.item() / L:.4f}')
+
+
 def main():
     # Example input
     time_series = np.sin(np.linspace(0, 100, 1000))  # Just an example time series
 
     # Prepare the data
-    input_size = 50
-    labels = np.lib.stride_tricks.sliding_window_view(time_series, input_size)
-    num_samples = labels.shape[0]
-    labels = torch.tensor(labels, dtype=torch.float32)  # Shape: (num_samples, input_size)
-    inputs = torch.cat([torch.zeros((num_samples, 1)), labels[:, :-1]], axis=1).unsqueeze(-1) # Shape: (num_samples, input_size, 1)
+    L = 50
+    X = np.lib.stride_tricks.sliding_window_view(time_series, L).copy()
 
-    # Initialize the model, loss function, and optimizer
-    model = DeepAR(input_size=1, hidden_size=16, num_layers=1, dropout=0)
-    #criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=2e-3)
-    print(inputs.shape)
-    print(labels.shape)
-    # Training loop
+    with fixedseed([torch, np], 109228):
+        model = DeepAR(hidden_size=16, num_layers=1, dropout=0, max_epochs=150, learning_rate=2e-3)
+        model.fit(X)
 
-    epochs = 400
-
-    for epoch in range(epochs):
-        model.train()
-        optimizer.zero_grad()
-
-        h0, c0 = model.initialize_hidden(inputs.shape[0])
-        loss = 0
-
-        for t in range(input_size):
-            mu, sigma, h0, c0 = model(inputs[:, t].unsqueeze(1).clone(), h0, c0)
-            ll = torch.distributions.normal.Normal(mu, sigma).log_prob(labels[:, t]).mean()
-            loss += ll
-        
-        loss = -loss
-        loss.backward()
-        optimizer.step()
-
-        print(f'Epoch [{epoch+1}/{epochs}], Loss: {loss.item() / input_size:.4f}')
-
-    print("Training complete.")
-    test_input = inputs[-1:]
-    print(test_input.shape)
-    length = 100
-    preds = model.predict(test_input, length=length, num_samples=100)
+        print("Training complete.")
+        test_input = X[-1:]
+        length = 100
+        preds = model.predict(test_input, length=length, num_samples=100)
 
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(12, 4))
