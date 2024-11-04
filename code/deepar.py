@@ -1,8 +1,10 @@
+import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
 from tsx.utils import get_device
 from seedpy import fixedseed
+from scipy.stats import zscore
 
 # Define the LSTM-based model for time series forecasting
 class DeepAR(nn.Module):
@@ -85,6 +87,7 @@ class DeepAR(nn.Module):
 
         # Offset inputs by one 
         X = torch.cat([torch.zeros(n_samples, 1, n_channels), X[:, :-1]], axis=1)
+        y = y[..., 0]
 
         X = X.to(self.device)
         y = y.to(self.device)
@@ -108,17 +111,36 @@ class DeepAR(nn.Module):
 
             print(f'Epoch [{epoch+1}/{self.max_epochs}], Loss: {loss.item() / L:.4f}')
 
+def generate_covariates(length, freq, start_date=None):
+    def _zscore(X):
+        if np.all(X[0] == X):
+            return np.zeros((len(X)))
+        return zscore(X)
+
+    if start_date is None:
+        start_date = '1970-01-01'
+
+    time_series = pd.date_range(start=start_date, periods=length, freq=freq)
+
+    weekday = _zscore(time_series.weekday.to_numpy())
+    hour = _zscore(time_series.hour.to_numpy())
+    month = _zscore(time_series.month.to_numpy())
+    covariates = np.stack([weekday, hour, month]).T
+
+    return covariates
 
 def main():
     # Example input
     time_series = np.sin(np.linspace(0, 100, 1000))  # Just an example time series
+    covariates = generate_covariates(len(time_series), freq='1min')
+    time_series = np.concatenate([time_series[..., None], covariates], axis=1)
 
     # Prepare the data
     L = 50
-    X = np.lib.stride_tricks.sliding_window_view(time_series, L).copy()
+    X = np.lib.stride_tricks.sliding_window_view(time_series, L, axis=0).copy().swapaxes(1, 2)
 
     with fixedseed([torch, np], 109228):
-        model = DeepAR(hidden_size=16, num_layers=1, dropout=0, max_epochs=150, learning_rate=2e-3)
+        model = DeepAR(n_channel=4, hidden_size=16, num_layers=1, dropout=0, max_epochs=150, learning_rate=2e-3)
         model.fit(X)
 
         print("Training complete.")
