@@ -43,10 +43,11 @@ class DeepAR(nn.Module):
         return mu, sigma, h0, c0
 
     @torch.no_grad()
-    def predict(self, x, covariates, length=100, num_samples=10):
+    def predict(self, x, covariates=None, length=100, num_samples=10):
         self.eval()
         x = torch.from_numpy(x).float().to(self.device)
-        covariates = torch.from_numpy(covariates).float().to(self.device)
+        if covariates is not None:
+            covariates = torch.from_numpy(covariates).float().to(self.device)
         batch_size = x.shape[0]
         input_size = x.shape[1]
         if len(x.shape) == 2:
@@ -70,7 +71,8 @@ class DeepAR(nn.Module):
                 # TODO: Scaling? 
                 preds[:, t, j] = sample
                 buffer[:, t+1, 0] = sample.squeeze()
-                buffer[:, t+1, 1:] = covariates[t] 
+                if covariates is not None:
+                    buffer[:, t+1, 1:] = covariates[t] 
 
         return preds.numpy()
 
@@ -140,11 +142,16 @@ def generate_covariates(length, freq, start_date=None):
     return covariates
 
 def main():
-    # Example input
-    time_series = np.sin(np.linspace(0, 100, 1100))  # Just an example time series
-    covariates = generate_covariates(len(time_series), freq='1min')
-    time_series = np.concatenate([time_series[..., None], covariates], axis=1)
+    use_covariates = True
 
+    time_series = np.sin(np.linspace(0, 100, 1100))  # Just an example time series
+    if use_covariates:
+        covariates = generate_covariates(len(time_series), freq='1min')
+        time_series = np.concatenate([time_series[..., None], covariates], axis=1)
+    else:
+        time_series = time_series[..., None]
+
+    # Split into train and test values
     X_train = time_series[:1000]
     y_test = time_series[1000:]
 
@@ -153,14 +160,18 @@ def main():
     x_train = np.lib.stride_tricks.sliding_window_view(X_train, L, axis=0).copy().swapaxes(1, 2)
 
     with fixedseed([torch, np], 109228):
-        model = DeepAR(n_channel=4, hidden_size=16, num_layers=1, dropout=0, max_epochs=20, learning_rate=2e-3)
+        if use_covariates:
+            n_channels = 4
+        else:
+            n_channels = 1
+        model = DeepAR(n_channel=n_channels, hidden_size=16, num_layers=1, dropout=0, max_epochs=20, learning_rate=2e-3)
         model.fit(x_train)
 
         print("Training complete.")
         test_input = x_train[-1:]
         length = 100
         # Since the covariates are assumed to be known at each time step we need to provide them for the values that need be predicted
-        preds = model.predict(test_input, length=length, num_samples=10, covariates=y_test[:, 1:])
+        preds = model.predict(test_input, length=length, num_samples=10, covariates=y_test[:, 1:] if use_covariates else None)
 
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(12, 4))
