@@ -8,7 +8,7 @@ from scipy.stats import zscore
 
 # Define the LSTM-based model for time series forecasting
 class DeepAR(nn.Module):
-    def __init__(self, n_channel=1, hidden_size=50, num_layers=2, dropout=0.1, learning_rate=2e-3, max_epochs=100, device=None):
+    def __init__(self, n_channel=1, hidden_size=50, num_layers=2, dropout=0.1, learning_rate=2e-3, max_epochs=100, batch_size=64, device=None):
         super(DeepAR, self).__init__()
         self.device = get_device() if device is None else device
         self.hidden_size = hidden_size
@@ -27,6 +27,7 @@ class DeepAR(nn.Module):
 
         self.learning_rate = learning_rate
         self.max_epochs = max_epochs
+        self.batch_size = batch_size
 
     def initialize_hidden(self, batch_size):
         h0 = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(self.device)
@@ -42,9 +43,10 @@ class DeepAR(nn.Module):
         return mu, sigma, h0, c0
 
     @torch.no_grad()
-    def predict(self, x, length=100, num_samples=10):
+    def predict(self, x, covariates, length=100, num_samples=10):
         self.eval()
         x = torch.from_numpy(x).float().to(self.device)
+        covariates = torch.from_numpy(covariates).float().to(self.device)
         batch_size = x.shape[0]
         input_size = x.shape[1]
         if len(x.shape) == 2:
@@ -60,14 +62,15 @@ class DeepAR(nn.Module):
         # Next, do the actual prediction
         for j in range(num_samples):
             n_h0, n_c0 = h0.clone(), c0.clone()
-            buffer = torch.cat([x[:, -1:], torch.zeros((batch_size, length, x.shape[-1])).to(self.device)], axis=1)
+            buffer = torch.cat([x[:, -1:].clone(), torch.zeros((batch_size, length, x.shape[-1])).to(self.device)], axis=1)
             for t in range(length):
                 mu, sigma, n_h0, n_c0 = self(buffer[:, t].unsqueeze(1), n_h0, n_c0)
                 dist = torch.distributions.normal.Normal(mu, sigma)
                 sample = dist.sample().reshape(batch_size, 1)
                 # TODO: Scaling? 
                 preds[:, t, j] = sample
-                buffer[:, t+1] = sample
+                buffer[:, t+1, 0] = sample.squeeze()
+                buffer[:, t+1, 1:] = covariates[t] 
 
         return preds.numpy()
 
@@ -87,29 +90,36 @@ class DeepAR(nn.Module):
 
         # Offset inputs by one 
         X = torch.cat([torch.zeros(n_samples, 1, n_channels), X[:, :-1]], axis=1)
-        y = y[..., 0]
+        y = y[..., 0] # TODO: Better handling for multivariate data necessary
 
         X = X.to(self.device)
         y = y.to(self.device)
 
+        # Batch data
+        ds = torch.utils.data.TensorDataset(X, y)
+        dl = torch.utils.data.DataLoader(ds, batch_size=self.batch_size, shuffle=True)
+
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         for epoch in range(self.max_epochs):
             self.train()
-            optimizer.zero_grad()
+            epoch_loss = []
+            for b_x, b_y in dl:
+                optimizer.zero_grad()
 
-            h0, c0 = self.initialize_hidden(X.shape[0])
-            loss = 0
+                h0, c0 = self.initialize_hidden(b_x.shape[0])
+                loss = 0
 
-            for t in range(L):
-                mu, sigma, h0, c0 = self(X[:, t].unsqueeze(1).clone(), h0, c0)
-                ll = torch.distributions.normal.Normal(mu, sigma).log_prob(y[:, t]).mean()
-                loss += ll
-            
-            loss = -loss
-            loss.backward()
-            optimizer.step()
+                for t in range(L):
+                    mu, sigma, h0, c0 = self(b_x[:, t].unsqueeze(1).clone(), h0, c0)
+                    ll = torch.distributions.normal.Normal(mu, sigma).log_prob(b_y[:, t]).mean()
+                    loss += ll
+                
+                loss = -loss
+                loss.backward()
+                optimizer.step()
+                epoch_loss.append(loss.item())
 
-            print(f'Epoch [{epoch+1}/{self.max_epochs}], Loss: {loss.item() / L:.4f}')
+            print(f'Epoch [{epoch+1}/{self.max_epochs}], Loss: {np.mean(epoch_loss) / L:.4f}')
 
 def generate_covariates(length, freq, start_date=None):
     def _zscore(X):
@@ -131,27 +141,31 @@ def generate_covariates(length, freq, start_date=None):
 
 def main():
     # Example input
-    time_series = np.sin(np.linspace(0, 100, 1000))  # Just an example time series
+    time_series = np.sin(np.linspace(0, 100, 1100))  # Just an example time series
     covariates = generate_covariates(len(time_series), freq='1min')
     time_series = np.concatenate([time_series[..., None], covariates], axis=1)
 
+    X_train = time_series[:1000]
+    y_test = time_series[1000:]
+
     # Prepare the data
     L = 50
-    X = np.lib.stride_tricks.sliding_window_view(time_series, L, axis=0).copy().swapaxes(1, 2)
+    x_train = np.lib.stride_tricks.sliding_window_view(X_train, L, axis=0).copy().swapaxes(1, 2)
 
     with fixedseed([torch, np], 109228):
-        model = DeepAR(n_channel=4, hidden_size=16, num_layers=1, dropout=0, max_epochs=150, learning_rate=2e-3)
-        model.fit(X)
+        model = DeepAR(n_channel=4, hidden_size=16, num_layers=1, dropout=0, max_epochs=20, learning_rate=2e-3)
+        model.fit(x_train)
 
         print("Training complete.")
-        test_input = X[-1:]
+        test_input = x_train[-1:]
         length = 100
-        preds = model.predict(test_input, length=length, num_samples=100)
+        # Since the covariates are assumed to be known at each time step we need to provide them for the values that need be predicted
+        preds = model.predict(test_input, length=length, num_samples=10, covariates=y_test[:, 1:])
 
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(12, 4))
     last = 500
-    ax.plot(np.arange(last), time_series[-last:], label='input')
+    ax.plot(np.arange(last), X_train[-last:, 0], label='input')
     preds = preds.squeeze()
     ax.plot(np.arange(length)+last-1, preds.mean(-1), label='pred (mean)', color='b')
     ax.fill_between(np.arange(length)+last-1, preds.mean(-1) - preds.std(-1), preds.mean(-1) + preds.std(-1), color='b', alpha=0.1)
