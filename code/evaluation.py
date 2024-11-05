@@ -4,17 +4,15 @@ import tqdm
 import pandas as pd
 import numpy as np
 import pickle
-from gluonts.mx.model.predictor import Predictor
 #from gluonts.model.predictor import Predictor, ParallelizedPredictor
 from gluonts.dataset.repository import get_dataset
-from gluonts.dataset.common import ListDataset
-from gluonts.evaluation.backtest import make_evaluation_predictions
-from config import Ls, tsx_to_gluon, all_gluon_models, all_datasets
+from config import Ls, tsx_to_gluon
 from preprocessing import get_train_data
-from pathlib import Path
 from tsx.datasets import windowing
+from tsx.utils import get_device
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from os import makedirs
+from chronos import ChronosPipeline
 
 class Predictor:
 
@@ -165,8 +163,34 @@ def get_overall_table(datasets):
     final_df = pd.concat(dfs)
     print(final_df)
 
+def get_chronos_predictions(ds_name, n_samples=5):
+    # Get data
+    ds = get_dataset(tsx_to_gluon[ds_name])
+    _, X_val, X_test = get_train_data(ds)
+    L = Ls[ds_name]
+    H = 1
+
+    # Instantiate model
+    device = get_device()
+    pipeline = ChronosPipeline.from_pretrained(
+        'amazon/chronos-t5-small',
+        device_map=device, 
+    )
+
+    batch_size = 256
+
+    for X in tqdm.tqdm(X_val, desc=f'chronos val {ds_name}'):
+        x, _ = windowing(X, L=L, H=H)
+        x = torch.from_numpy(x).float()
+        # preds = []
+        # for i in range(0, len(x), batch_size):
+        #     preds.append(pipeline.predict(context=x[i:i+batch_size], prediction_length=H, num_samples=n_samples).mean(axis=1))
+        # preds = torch.cat(preds, axis=0)
+        preds = pipeline.predict(context=x, prediction_length=H, num_samples=n_samples).mean(axis=1)
+        
 if __name__ == '__main__':
+    get_chronos_predictions('weather')
     #get_val_preds('weather')
-    for ds_name in all_datasets:
-        get_val_preds(ds_name)
+    # for ds_name in all_datasets:
+    #     get_val_preds(ds_name)
     #get_overall_table(all_datasets)
