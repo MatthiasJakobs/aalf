@@ -26,7 +26,7 @@ from config import Ls
 
 def main(to_run, njobs, debug=False):
 
-    ds_names = ['nn5']
+    ds_names = ['weather', 'pedestrian_counts', 'kdd_cup_nomissing', 'web_traffic', 'nn5']
 
     if to_run is None:
         to_run = []
@@ -40,7 +40,8 @@ def main(to_run, njobs, debug=False):
         else:
             fraction = 1
 
-        L = Ls[ds_name]
+        L = 15
+        #L = Ls[ds_name]
         X = load_dataset(ds_name, fraction=fraction)
 
         print(ds_name, 'n_series', len(X))
@@ -110,24 +111,25 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     #         f_c.fit(x_train, y_train.squeeze())
     #         f_c.save_model(ds_name, ds_index)
 
-    f_i = LinearRegression()
-    f_i.fit(x_train, y_train)
+    models = fit_basemodels(L, ds_name, ds_index, x_train, y_train, random_state=1917161)
 
-    #makedirs(f'preds/{ds_name}/{ds_index}', exist_ok=True)
+    for model_name, model in models.items():
+        if model_name not in test_results:
+            preds = model.predict(x_test)
+            loss = rmse(preds, y_test)
+            test_results[model_name] = loss
 
-    lin_preds_train = f_i.predict(x_train)
-    lin_preds_val = f_i.predict(x_val)
-    lin_preds_test = f_i.predict(x_test)
-    loss_i_test = rmse(lin_preds_test, y_test)
-    #np.save(f'preds/{ds_name}/{ds_index}/lin.npy', lin_preds_test.reshape(-1))
-    test_results['linear'] = loss_i_test
+    if 'HetEnsemble-mean' not in test_results:
+        he = HetEnsemble(models.values(), agg='mean')
+        preds = he.predict(x_test)
+        loss = rmse(preds, y_test)
+        test_results['HetEnsemble-mean'] = loss
 
-    if not 'trf-raw' in test_results:
-        rf = TableForestRegressor(n_estimators=128, include_raw=True, random_state=19278161)
-        rf.fit(x_train, y_train.squeeze())
-        rf_preds_test = rf.predict(x_test)
-        loss_test = rmse(rf_preds_test, y_test)
-        test_results['trf-raw'] = loss_test
+    if 'HetEnsemble-median' not in test_results:
+        he = HetEnsemble(models.values(), agg='median')
+        preds = he.predict(x_test)
+        loss = rmse(preds, y_test)
+        test_results['HetEnsemble-median'] = loss
 
     # nn_preds_train = f_c.predict(x_train)
     # nn_preds_val = f_c.predict(x_val)
@@ -270,22 +272,20 @@ def run_experiment(ds_name, ds_index, X, L, H, test_results, selection_results, 
     # loss_test_test = rmse(test_prediction_test, y_test.reshape(-1))
     # test_results['cnn'] = loss_test_test
 
-    with open(f'models/cnn_{ds_name}.pickle', 'rb') as f:
-        global_cnn = pickle.load(f)
-    test_prediction_test = global_cnn.predict(x_test).reshape(-1)
-    loss_test_test = rmse(test_prediction_test, y_test.reshape(-1))
-    test_results['global_cnn'] = loss_test_test
+    # with open(f'models/cnn_{ds_name}.pickle', 'rb') as f:
+    #     global_cnn = pickle.load(f)
+    # test_prediction_test = global_cnn.predict(x_test).reshape(-1)
+    # loss_test_test = rmse(test_prediction_test, y_test.reshape(-1))
+    # test_results['global_cnn'] = loss_test_test
 
     name = 'LastValue'
     test_prediction_test = x_test[:, -1].reshape(-1)
     loss_test_test = rmse(test_prediction_test, y_test)
-    #np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test)
     test_results[name] = loss_test_test
 
     name = 'MeanValue'
     test_prediction_test = x_test.mean(axis=1).reshape(-1)
     loss_test_test = rmse(test_prediction_test, y_test)
-    #np.save(f'preds/{ds_name}/{ds_index}/{name}.npy', test_prediction_test)
     test_results[name] = loss_test_test
 
     return test_results, selection_results, gfi_results

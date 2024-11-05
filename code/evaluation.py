@@ -1,233 +1,172 @@
+import torch
+import torch.nn as nn
 import tqdm
-import numpy as np
-import pickle 
 import pandas as pd
-import matplotlib.pyplot as plt
+import numpy as np
+import pickle
+from gluonts.mx.model.predictor import Predictor
+#from gluonts.model.predictor import Predictor, ParallelizedPredictor
+from gluonts.dataset.repository import get_dataset
+from gluonts.dataset.common import ListDataset
+from gluonts.evaluation.backtest import make_evaluation_predictions
+from config import Ls, tsx_to_gluon, all_gluon_models, all_datasets
+from preprocessing import get_train_data
+from pathlib import Path
+from tsx.datasets import windowing
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+from os import makedirs
 
-from models import MedianPredictionEnsemble
-from datasets import load_dataset
-from tsx.datasets import windowing, split_proportion
-from sklearn.metrics import mean_absolute_error, mean_squared_error
-from itertools import product
-from cdd_plots import DATASET_DICT_SMALL
-from cdd_plots import TREATMENT_DICT
-from os import system, remove
-from os.path import basename, exists, dirname, join
-from shutil import which, move
-from subprocess import run
-from utils import smse as standardized_mean_squared_error
+class Predictor:
 
-ALL_METRICS = ['RMSE', 'MAE', 'MSE']
+    def __init__(self, model):
+        self.model = model
 
-def load_models(ds_name, ds_index):
-    with open(f'models/{ds_name}/{ds_index}/linear.pickle', 'rb') as f:
-        f_i = pickle.load(f)
+    def predict(self, X):
+        self.model.eval()
+        X = torch.from_numpy(X).float()
+        with torch.no_grad():
+            out = self.model(X).squeeze().numpy()
+
+        return out
+
+def rmse(*args):
+    return mean_squared_error(*args, squared=False)
+
+def mse(*args):
+    return mean_squared_error(*args)
+
+def mae(*args):
+    return mean_absolute_error(*args)
+
+def smape(y_true, y_pred):
+    nom = np.abs(y_pred - y_true)
+    denom = (np.abs(y_pred) + np.abs(y_true)) / 2
+    N = len(y_true)
+    return 100/N * (nom/denom).sum()
+
+def load_pickled(path):
+    with open(path, 'rb') as f:
+        model = pickle.load(f)
     
-    f_c = MedianPredictionEnsemble.load_model(ds_name, ds_index)
+    return model
 
-    return f_i, f_c
+def load_global_model(model_name, ds_name):
+    if model_name not in ['fcn']:
+        raise NotImplementedError('Cannot load unknown model', model_name)
+    path = f'models/global/{ds_name}/{model_name}.pth'
 
-def preprocess_data(X, L, H):
-    # Split and normalize data
-    X_train, _ = split_proportion(X, (0.5, 0.5))
-    X = (X - np.mean(X)) / np.std(X)
-    X_train, X_val, X_test = split_proportion(X, (0.5, 0.25, 0.25))
+    if model_name == 'fcn':
+        L = Ls[ds_name]
+        model = nn.Sequential(
+            nn.Linear(L, 100),
+            nn.ReLU(),
+            nn.Linear(100, 1)
+        )
+        model.load_state_dict(torch.load(path, weights_only=True))
 
-    # Instead of forecasting t+1, forecast t+j
-    x_train, y_train = windowing(X_train, L=L, H=H)
-    x_val, y_val = windowing(X_val, L=L, H=H)
-    x_test, y_test = windowing(X_test, L=L, H=H)
-    if len(y_train.shape) == 1:
-        y_train = y_train.reshape(-1, 1)
-    if len(y_val.shape) == 1:
-        y_val = y_val.reshape(-1, 1)
-    if len(y_test.shape) == 1:
-        y_test = y_test.reshape(-1, 1)
-    y_train = y_train[..., -1:]
-    y_val = y_val[..., -1:]
-    y_test = y_test[..., -1:]
+    # Wrap in predictor
+    model = Predictor(model)
+    return model
 
-    x_train = x_train.astype(np.float32)
-    x_val = x_val.astype(np.float32)
-    x_test = x_test.astype(np.float32)
-    y_train = y_train.astype(np.float32)
-    y_val = y_val.astype(np.float32)
-    y_test = y_test.astype(np.float32)
+def get_val_preds(ds_name):
+    ds = get_dataset(tsx_to_gluon[ds_name])
+    _, X_val, _ = get_train_data(ds)
+    L = Ls[ds_name]
+    H = 1
 
-    return (x_train, y_train), (x_val, y_val), (x_test, y_test)
+    # Load models
+    global_models = {model_name: load_global_model(model_name, ds_name) for model_name in ['fcn']}
+    local_models = {model_name: load_pickled(f'models/local/{ds_name}/{model_name}.pickle') for model_name in ['linear']}
 
-def main(ds_names, methods):
-    ds_fraction = 1
-    rng = np.random.RandomState(20240103)
+    makedirs(f'preds/', exist_ok=True)
 
-    L = 10
-    results = { method_name: {'Dataset': [], 'MAE': [], 'MSE': [], 'RMSE': [], 'SMSE': []} for method_name in methods}
+    ds_predictions = {m_name: [] for m_name in (global_models | local_models).keys()}
+    for val_idx in tqdm.trange(len(X_val)):
 
-    for ds_name in ds_names:
-        _X, horizons, indices = load_dataset(ds_name)
+        X = X_val[val_idx]
+        x, _ = windowing(X, L=L, H=H)
 
-        # Get fraction
-        indices = rng.choice(indices, size=int(len(indices)*ds_fraction), replace=False)
+        # Apply global models
+        for gm_name, predictor in global_models.items():
+            # preds = evaluate_on_windows(predictor, x, ds.metadata.freq).squeeze().reshape(-1)
+            preds = predictor.predict(x)
+            ds_predictions[gm_name].append(preds)
 
-        mses = {method_name: 0 for method_name in methods}
-        maes = {method_name: 0 for method_name in methods}
-        rmses = {method_name: 0 for method_name in methods}
-        smses = {method_name: 0 for method_name in methods}
+        # Apply local models
+        for lm_name, model_list in local_models.items():
+            model = model_list[val_idx]
+            preds = model.predict(x).squeeze().reshape(-1)
+            ds_predictions[lm_name].append(preds)
 
-        for ds_index in tqdm.tqdm(indices, desc=ds_name):
-            (_, _), (_, _), (_, y_test) = preprocess_data(_X[ds_index], L, horizons[ds_index])
-            y_test = y_test.reshape(-1)
+    with open(f'preds/{ds_name}.pickle', 'wb') as f:
+        pickle.dump(ds_predictions, f)
 
-            for method_name in methods:
+def evaluate_test(ds_name, relative_error='linear'):
+    ds = get_dataset(tsx_to_gluon[ds_name])
+    _, _, X_test = get_train_data(ds, gluon=False)
+    L = Ls[ds_name]
+    H = 1
 
-                preds = np.load(f'preds/{ds_name}/{ds_index}/{method_name}.npy')
-                mse = mean_squared_error(y_test, preds)
-                mae = mean_absolute_error(y_test, preds)
-                rmse = mean_squared_error(y_test, preds, squared=False)
-                smse = standardized_mean_squared_error(y_test, preds)
-                mses[method_name] += (mse / len(indices))
-                maes[method_name] += (mae / len(indices))
-                rmses[method_name] += (rmse / len(indices))
-                smses[method_name] += (smse / len(indices))
+    loss_functions = {
+        'RMSE': rmse,
+        'MSE': mse,
+        'MAE': mae,
+        'SMAPE': smape,
+    }
 
-        for method_name in methods:
-            results[method_name]['Dataset'].append(DATASET_DICT_SMALL[ds_name])
-            results[method_name]['MSE'].append(mses[method_name])
-            results[method_name]['MAE'].append(maes[method_name])
-            results[method_name]['RMSE'].append(rmses[method_name])
-            results[method_name]['SMSE'].append(smses[method_name])
+    # Load models
+    global_models = {model_name: load_global_model(model_name, ds_name) for model_name in ['fcn']}
+    local_models = {model_name: load_pickled(f'models/local/{ds_name}/{model_name}.pickle') for model_name in ['linear']}
 
-    print(results)
-    results = { k: pd.DataFrame(v).set_index('Dataset') for k, v in results.items() }
-    df = pd.concat(results.values(), axis=1, keys=results.keys())
+    test_losses = []
+    for test_idx in tqdm.trange(len(X_test), desc=f'{ds_name} - generate table'):
+        losses = {}
+
+        X = X_test[test_idx]
+        if len(X) < L + H:
+            continue
+        x, y = windowing(X, L=L, H=H)
+        if len(X) == L+H:
+            x = x.reshape(1, -1)
+            y = y.reshape(1)
+
+        # Apply global models
+        for gm_name, predictor in global_models.items():
+            preds = predictor.predict(x).squeeze()
+            if len(preds.shape) == 0:
+                preds = preds.reshape(1)
+            for loss_fn_name, loss_fn in loss_functions.items():
+                losses[(gm_name, loss_fn_name)] = loss_fn(y, preds)
+
+        # Apply local models
+        for lm_name, model_list in local_models.items():
+            model = model_list[test_idx]
+            preds = model.predict(x).squeeze()
+            if len(preds.shape) == 0:
+                preds = preds.reshape(1)
+            for loss_fn_name, loss_fn in loss_functions.items():
+                losses[(lm_name, loss_fn_name)] = loss_fn(y, preds)
+
+        if relative_error is not None:
+            divider = {loss_name: value for (model_name, loss_name), value in losses.items() if model_name == relative_error}
+            losses = {(model_name, loss_name): value / divider[loss_name] for (model_name, loss_name), value in losses.items()}
+        test_losses.append(losses)
+
+    df = pd.DataFrame(test_losses)
+    df.columns = pd.MultiIndex.from_tuples(df.columns)
+
     return df
 
-def highlight_min(s, to_highlight):
-    smallest_indices = []
-    second_smallest_indices = []
-    for th in to_highlight:
-        s_sorted = np.sort(s[th])
-        smallest_index = np.where(s == s_sorted[0])[0][0]
-        second_smallest_index = np.where(s == s_sorted[1])[0][0]
-        smallest_indices.append(smallest_index)
-        second_smallest_indices.append(second_smallest_index)
-
-    to_return = []
-    for idx in range(len(s)):
-        if idx in smallest_indices:
-            to_return.append('textbf:--rwrap;')
-        elif idx in second_smallest_indices:
-            to_return.append('underline:--rwrap;')
-        else:
-            to_return.append(None)
-    return to_return
-
-def make_pretty(styler, to_highlight, save_path, transpose=False, hide_metrics=False):
-    if transpose:
-        hide_axis=1
-        highlight_axis=0
-    else:
-        hide_axis=0
-        highlight_axis=1
-
-    styler.apply(highlight_min, axis=highlight_axis, to_highlight=to_highlight)
-    styler.format(precision=3)
-    styler.hide(axis=hide_axis, names=True)
-
-    if hide_metrics:
-        styler.hide(axis=highlight_axis, level=1)
-
-    if transpose:
-        tex = styler.to_latex(hrules=True)
-    else:
-        tex = styler.to_latex(multicol_align='c', hrules=True)
-
-    # Use tabular*
-    tex_list = tex.splitlines()
-    tex_list = ['\\begin{tabular*}{\\linewidth}{@{\extracolsep{\\fill}} l'+ 'r'*len(to_highlight[0]) + '}'] + tex_list[1:-1] + ['\\end{tabular*}']
-    tex = '\n'.join(tex_list)
-
-    with open(save_path, 'w+') as _f:
-        _f.write(tex)
-    
-    return styler
-
-
-def plot_table(df, save_path, methods, transpose=False):
-
-    metrics = ['RMSE']
-
-    # Drop metrics not used 
-    columns_to_keep = [(level_0, level_1) for level_0, level_1 in df.columns if level_1 in metrics]
-    df = df[columns_to_keep]
-
-    # Drop methods not used 
-    columns_to_keep = [(level_0, level_1) for level_0, level_1 in df.columns if level_0 in methods]
-    df = df[columns_to_keep]
-
-    # Rename methods
-    methods = [TREATMENT_DICT.get(t_name, t_name) for t_name in methods]
-    df.columns = pd.MultiIndex.from_tuples([(TREATMENT_DICT.get(t_name, t_name), m_name) for (t_name, m_name) in df.columns])
-    print(df.columns)
-    
-    to_highlight = [list(product(methods, [metric])) for metric in metrics]
-    if transpose:
-        df = df.T
-    df.style.pipe(make_pretty, save_path=save_path, to_highlight=to_highlight, transpose=transpose, hide_metrics=len(metrics)==1)
-
-def render_table_as_pdf(TABLE_PATH):
-    latex_installed = which('pdflatex') is not None
-    if latex_installed:
-        # Load output file againg
-        with open(TABLE_PATH, 'r') as _f:
-            tex = [line.strip() for line in _f.readlines()]
-        # Build a standalone latex file
-        standalone = [
-            r'\documentclass[border=5pt]{standalone}',
-            r'\usepackage{booktabs}',
-            r'\usepackage{amssymb}',
-            r'\usepackage{amsmath}',
-            r'\begin{document}',
-            r'\setlength\tabcolsep{0pt}',
-            *tex,
-            r'\end{document}',
-        ]
-        tex = '\n'.join(standalone)
-        print(basename(TABLE_PATH))
-        print(dirname(TABLE_PATH))
-        with open('tmp.tex', 'w') as _f:
-            _f.write(tex)
-        run(['pdflatex', 'tmp.tex'])
-        remove('tmp.tex')
-        remove('tmp.log')
-        remove('tmp.aux')
-
-        new_path = join(dirname(TABLE_PATH), basename(TABLE_PATH).replace('tex', 'pdf'))
-        print(new_path)
-        move('tmp.pdf', new_path)
+def get_overall_table(datasets):
+    dfs = [evaluate_test(ds_name).mean() for ds_name in datasets]
+    dfs = [pd.DataFrame([df], index=[ds_name]) for ds_name, df in zip(datasets, dfs)]
+    for df in dfs:
+        df.columns = pd.MultiIndex.from_tuples(df.columns)
+    final_df = pd.concat(dfs)
+    print(final_df)
 
 if __name__ == '__main__':
-
-    methods = ['v12_0.5', 'v12_0.9', 'v12_0.95', 'v12_0.99', 'oms', 'knnroc', 'ade', 'dets']
-    full_methods = ['MeanValue', 'LastValue', 'v12_0.5', 'v12_0.6', 'v12_0.7', 'v12_0.8', 'v12_0.9', 'v12_0.95', 'v12_0.99', 'oms', 'knnroc', 'ade', 'dets', 'lin', 'nn' ]
-    ds_names = ['pedestrian_counts', 'web_traffic', 'kdd_cup_nomissing', 'weather' ]
-
-    EVAL_PATH = 'results/eval.pickle'
-    TABLE_PATH = 'results/metrics_table.tex'
-    FULL_TABLE_PATH = 'results/metrics_table_all.tex'
-
-    if not exists(EVAL_PATH):
-        print('recreate', EVAL_PATH)
-        results = main(ds_names, full_methods)
-        results.to_pickle(EVAL_PATH)
-    else:
-        results = pd.read_pickle(EVAL_PATH)
-
-    print(results)
-
-    plot_table(results, TABLE_PATH, methods, transpose=False)
-    render_table_as_pdf(TABLE_PATH)
-
-    # Plot long table for all results
-    plot_table(results, FULL_TABLE_PATH, full_methods, transpose=True)
-    render_table_as_pdf(FULL_TABLE_PATH)
+    #get_val_preds('weather')
+    for ds_name in all_datasets:
+        get_val_preds(ds_name)
+    #get_overall_table(all_datasets)

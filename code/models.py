@@ -3,6 +3,7 @@ import pickle
 import torch
 import torch.nn as nn
 import tqdm
+import torch.nn.functional as F
 
 import torch.utils
 import torch.utils.data
@@ -15,20 +16,24 @@ from seedpy import fixedseed
 from tsx.models.forecaster.baselines import TableForestRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.svm import SVR
+from sklearn.linear_model import LinearRegression
+from sklearn.neural_network import MLPRegressor
 from tsx.utils import get_device
 from torchsummary import summary
 
 from os import makedirs
 from os.path import exists
 
-def fit_basemodels(ds_name, ds_index, x_train, y_train, random_state=None):
+def fit_basemodels(L, ds_name, ds_index, x_train, y_train, random_state=None):
 
     models = {
-        'rf_64_2': RandomForestRegressor(n_estimators=64, max_depth=2, random_state=random_state),
-        'tfr_64_2': TableForestRegressor(n_estimators=64, max_depth=2, random_state=random_state),
-        'rf_64_4': RandomForestRegressor(n_estimators=64, max_depth=4, random_state=random_state),
-        'tfr_64_4': TableForestRegressor(n_estimators=64, max_depth=4, random_state=random_state),
+        'trf-128': TableForestRegressor(n_estimators=128, include_raw=True, random_state=random_state),
+        'linear': LinearRegression(),
+        'fcn': MLPRegressor((64,), learning_rate_init=1e-3, max_iter=500, early_stopping=True, random_state=random_state),
         'svr': SVR(),
+        'local_cnn': CNN(L=L, batch_norm=True, depth_classification=1, depth_feature=1, n_hidden_neurons=32, max_epochs=10, verbose=False, random_state=random_state),
+        'local_cnn_2': CNN(L, batch_norm=True, depth_classification=1, depth_feature=2, n_hidden_neurons=32, max_epochs=20, verbose=False, random_state=random_state),
+        #'frets': FreTS()
     }
 
     for m_name, m in models.items():
@@ -58,7 +63,7 @@ class HetEnsemble:
         if self.agg == 'mean':
             preds = preds.mean(axis=0)
         elif self.agg == 'median':
-            preds = preds.median(axis=0)
+            preds = np.median(preds, axis=0)
         else:
             # TODO: Probably better check this in constructor already
             raise NotImplementedError('Unknwon aggregation strategy', self.agg)
@@ -91,7 +96,7 @@ class ResidualBlock(nn.Module):
 
 class CNN(nn.Module):
 
-    def __init__(self, L=10, H=1, n_channels=1, depth_feature=2, depth_classification=2, n_hidden_neurons=32, batch_norm=True, max_epochs=10, random_state=None, n_hidden_channels=16, batch_size=64, lr=2e-3):
+    def __init__(self, L=10, H=1, n_channels=1, depth_feature=2, depth_classification=2, n_hidden_neurons=32, batch_norm=True, max_epochs=10, random_state=None, n_hidden_channels=16, batch_size=64, lr=2e-3, verbose=True):
         super().__init__()
 
         self.L = L
@@ -107,6 +112,7 @@ class CNN(nn.Module):
         self.batch_norm = batch_norm
         self.device = get_device()
         self.batch_size = batch_size
+        self.verbose = verbose
 
     def build_model(self):
         with fixedseed(torch, self.random_state):
@@ -137,10 +143,10 @@ class CNN(nn.Module):
         #self.model = torch.compile(self.model)
 
     def forward(self, x):
-        lv = x[..., -1:]
-        x = (x - lv)
+        # lv = x[..., -1:]
+        # x = (x - lv)
         pred = self.model(x)
-        pred = pred + lv.squeeze()
+        #pred = pred + lv.squeeze()
         return pred
 
     def predict(self, X):
@@ -160,7 +166,7 @@ class CNN(nn.Module):
     def fit(self, X, y, x_val=None, y_val=None):
         self.build_model()
         #self.model = nn.Linear(self.L, 1).to(self.device)
-        summary(self.model, (1, X.shape[-1]))
+        #summary(self.model, (1, X.shape[-1]))
         # Convert to torch tensors
         X_tensor = torch.Tensor(X).float().to(self.device)
         y_tensor = torch.Tensor(y).float().to(self.device)
@@ -197,7 +203,7 @@ class CNN(nn.Module):
             for epoch in range(self.max_epochs):
                 train_losses = []
                 self.model.train()
-                for b_x, b_y in tqdm.tqdm(dl_train, desc=f'Epoch {epoch}', total=len(dl_train)):
+                for b_x, b_y in tqdm.tqdm(dl_train, desc=f'Epoch {epoch}', total=len(dl_train), disable=not self.verbose):
                     self.optimizer.zero_grad(set_to_none=True)
                     outputs = self.model(b_x).squeeze()
                     loss = self.loss_function(outputs, b_y)
@@ -214,11 +220,15 @@ class CNN(nn.Module):
                             loss = self.loss_function(outputs, b_y)
                             val_losses.append(loss.item())
 
-                    print(f'Epoch {epoch} train loss {np.mean(train_losses):.3f} val loss {np.mean(val_losses):.3f}')
+                    if self.verbose:
+                        print(f'Epoch {epoch} train loss {np.mean(train_losses):.3f} val loss {np.mean(val_losses):.3f}')
                 else:
-                    print(f'Epoch {epoch} train loss {np.mean(train_losses):.3f}')
+                    if self.verbose:
+                        print(f'Epoch {epoch} train loss {np.mean(train_losses):.3f}')
 
         self.model = self.model.to('cpu')
+
+        return self
         
     
 class SimpleAutoML:
@@ -333,3 +343,160 @@ class UpsampleEnsembleClassifier:
 
     def global_feature_importance(self):
         return np.vstack([est.feature_importances_ for est in self.estimators]).mean(axis=0)
+
+class FreTS(nn.Module):
+    def __init__(self, L=10, embed_size=128, hidden_size=256):
+        super().__init__()
+        self.embed_size = embed_size #embed_size
+        self.hidden_size = hidden_size #hidden_size
+        self.pre_length = 1
+        self.feature_size = 1
+        self.seq_length = L
+        self.channel_independence = True
+        self.sparsity_threshold = 0.01
+        self.scale = 0.02
+
+        self.device = 'cpu'
+        self.lr = 2e-3
+        self.verbose = False
+        self.batch_size = 64
+        self.max_epochs = 10
+
+    def build_model(self):
+        self.embeddings = nn.Parameter(torch.randn(1, self.embed_size))
+        self.r1 = nn.Parameter(self.scale * torch.randn(self.embed_size, self.embed_size))
+        self.i1 = nn.Parameter(self.scale * torch.randn(self.embed_size, self.embed_size))
+        self.rb1 = nn.Parameter(self.scale * torch.randn(self.embed_size))
+        self.ib1 = nn.Parameter(self.scale * torch.randn(self.embed_size))
+        self.r2 = nn.Parameter(self.scale * torch.randn(self.embed_size, self.embed_size))
+        self.i2 = nn.Parameter(self.scale * torch.randn(self.embed_size, self.embed_size))
+        self.rb2 = nn.Parameter(self.scale * torch.randn(self.embed_size))
+        self.ib2 = nn.Parameter(self.scale * torch.randn(self.embed_size))
+
+        self.fc = nn.Sequential(
+            nn.Linear(self.seq_length * self.embed_size, self.hidden_size),
+            nn.LeakyReLU(),
+            nn.Linear(self.hidden_size, self.pre_length)
+        )
+
+    # dimension extension
+    def tokenEmb(self, x):
+        # x: [Batch, Input length, Channel]
+        x = x.permute(0, 2, 1)
+        x = x.unsqueeze(3)
+        # N*T*1 x 1*D = N*T*D
+        y = self.embeddings
+        return x * y
+
+    # frequency temporal learner
+    def MLP_temporal(self, x, B, N, L):
+        # [B, N, T, D]
+        x = torch.fft.rfft(x, dim=2, norm='ortho') # FFT on L dimension
+        y = self.FreMLP(B, N, L, x, self.r2, self.i2, self.rb2, self.ib2)
+        x = torch.fft.irfft(y, n=self.seq_length, dim=2, norm="ortho")
+        return x
+
+    # frequency channel learner
+    def MLP_channel(self, x, B, N, L):
+        # [B, N, T, D]
+        x = x.permute(0, 2, 1, 3)
+        # [B, T, N, D]
+        x = torch.fft.rfft(x, dim=2, norm='ortho') # FFT on N dimension
+        y = self.FreMLP(B, L, N, x, self.r1, self.i1, self.rb1, self.ib1)
+        x = torch.fft.irfft(y, n=self.feature_size, dim=2, norm="ortho")
+        x = x.permute(0, 2, 1, 3)
+        # [B, N, T, D]
+        return x
+
+    # frequency-domain MLPs
+    # dimension: FFT along the dimension, r: the real part of weights, i: the imaginary part of weights
+    # rb: the real part of bias, ib: the imaginary part of bias
+    def FreMLP(self, B, nd, dimension, x, r, i, rb, ib):
+        o1_real = torch.zeros([B, nd, dimension // 2 + 1, self.embed_size],
+                              device=x.device)
+        o1_imag = torch.zeros([B, nd, dimension // 2 + 1, self.embed_size],
+                              device=x.device)
+
+        o1_real = F.relu(
+            torch.einsum('bijd,dd->bijd', x.real, r) - \
+            torch.einsum('bijd,dd->bijd', x.imag, i) + \
+            rb
+        )
+
+        o1_imag = F.relu(
+            torch.einsum('bijd,dd->bijd', x.imag, r) + \
+            torch.einsum('bijd,dd->bijd', x.real, i) + \
+            ib
+        )
+
+        y = torch.stack([o1_real, o1_imag], dim=-1)
+        y = F.softshrink(y, lambd=self.sparsity_threshold)
+        y = torch.view_as_complex(y)
+        return y
+
+    def forward(self, x):
+        # x: [Batch, Channel, L]
+        x = x.permute(0, 2, 1)
+        B, T, N = x.shape
+        # embedding x: [B, N, T, D]
+        x = self.tokenEmb(x)
+        bias = x
+        # [B, N, T, D]
+        if self.channel_independence == '1':
+            x = self.MLP_channel(x, B, N, T)
+        # [B, N, T, D]
+        x = self.MLP_temporal(x, B, N, T)
+        x = x + bias
+        x = self.fc(x.reshape(B, N, -1))
+        return x.squeeze()
+
+    def predict(self, X):
+        # Convert to torch tensors
+        X_tensor = torch.Tensor(X).float()
+
+        if len(X_tensor.shape) == 2:
+            X_tensor = X_tensor.unsqueeze(1)
+
+        self.eval()
+        with torch.no_grad():
+            out = self.forward(X_tensor).squeeze()
+
+        return out.numpy()
+
+
+    def fit(self, X, y, x_val=None, y_val=None):
+        with fixedseed(torch, 398117):
+            self.build_model()
+        X_tensor = torch.Tensor(X).float().to(self.device)
+        y_tensor = torch.Tensor(y).float().to(self.device)
+
+        if len(X_tensor.shape) == 2:
+            X_tensor = X_tensor.unsqueeze(1)
+
+        self.loss_function = nn.MSELoss()
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+
+        x_train = X_tensor
+        y_train = y_tensor
+
+        ds_train = torch.utils.data.TensorDataset(x_train, y_train)
+
+        with fixedseed(torch, 91817172):
+            dl_train = torch.utils.data.DataLoader(ds_train, drop_last=True, batch_size=self.batch_size, shuffle=True)
+
+            # Training loop
+            for epoch in range(self.max_epochs):
+                train_losses = []
+                self.train()
+                for b_x, b_y in tqdm.tqdm(dl_train, desc=f'Epoch {epoch}', total=len(dl_train), disable=not self.verbose):
+                    self.optimizer.zero_grad(set_to_none=True)
+                    outputs = self.forward(b_x).squeeze()
+                    loss = self.loss_function(outputs, b_y)
+                    loss.backward()
+                    self.optimizer.step()
+                    train_losses.append(loss.item())
+                
+                    if self.verbose:
+                        print(f'Epoch {epoch} train loss {np.mean(train_losses):.3f}')
+
+        return self

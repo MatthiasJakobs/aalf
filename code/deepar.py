@@ -8,7 +8,7 @@ from scipy.stats import zscore
 
 # Define the LSTM-based model for time series forecasting
 class DeepAR(nn.Module):
-    def __init__(self, n_channel=1, hidden_size=50, num_layers=2, dropout=0.1, learning_rate=2e-3, max_epochs=100, batch_size=64, device=None):
+    def __init__(self, n_channel=1, hidden_size=50, num_layers=2, dropout=0.1, learning_rate=2e-3, max_epochs=100, limit_train_batches=None, batch_size=64, device=None):
         super(DeepAR, self).__init__()
         self.device = get_device() if device is None else device
         self.hidden_size = hidden_size
@@ -28,6 +28,7 @@ class DeepAR(nn.Module):
         self.learning_rate = learning_rate
         self.max_epochs = max_epochs
         self.batch_size = batch_size
+        self.limit_train_batches = limit_train_batches
 
     def initialize_hidden(self, batch_size):
         h0 = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(self.device)
@@ -69,7 +70,7 @@ class DeepAR(nn.Module):
                 dist = torch.distributions.normal.Normal(mu, sigma)
                 sample = dist.sample().reshape(batch_size, 1)
                 # TODO: Scaling? 
-                preds[:, t, j] = sample
+                preds[:, t, j] = sample.squeeze()
                 buffer[:, t+1, 0] = sample.squeeze()
                 if covariates is not None:
                     buffer[:, t+1, 1:] = covariates[t] 
@@ -101,10 +102,16 @@ class DeepAR(nn.Module):
         ds = torch.utils.data.TensorDataset(X, y)
         dl = torch.utils.data.DataLoader(ds, batch_size=self.batch_size, shuffle=True)
 
+        if self.limit_train_batches is not None:
+            n_batches_per_epoch = min(self.limit_train_batches, len(dl))
+        else:
+            n_batches_per_epoch = len(dl)
+
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         for epoch in range(self.max_epochs):
             self.train()
             epoch_loss = []
+            n = 0
             for b_x, b_y in dl:
                 optimizer.zero_grad()
 
@@ -120,6 +127,10 @@ class DeepAR(nn.Module):
                 loss.backward()
                 optimizer.step()
                 epoch_loss.append(loss.item())
+
+                if n >= n_batches_per_epoch:
+                    break
+                n += 1
 
             print(f'Epoch [{epoch+1}/{self.max_epochs}], Loss: {np.mean(epoch_loss) / L:.4f}')
 
