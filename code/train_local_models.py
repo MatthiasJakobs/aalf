@@ -29,10 +29,6 @@ def train_local_model(model_name, ds_name, H=1, verbose=True):
     if model_name == 'linear':
         model_class = LinearRegression
         hyperparameters = {}
-    elif model_name == 'trf-32':
-        model_class = TableForestRegressor
-        hyperparameters = {'n_estimators': 32, 'random_state': 9437117, 'n_jobs': -1, 'include_raw': True}
-    elif model_name == 'cn':
     else:
         raise NotImplementedError('Local model', model_name, 'not implemented')
 
@@ -45,5 +41,5 @@ def train_local_model(model_name, ds_name, H=1, verbose=True):
         pickle.dump(models, f)
 
 if __name__ == '__main__':
-    for ds_name in all_datasets:
-        train_local_model('trf-32', ds_name)
+    for ds_name in ['dominick', 'nn5_daily', 'tourism_monthly', 'weather']:
+        train_local_model('linear', ds_name)

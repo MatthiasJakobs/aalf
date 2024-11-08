@@ -17,3 +17,4 @@ tsx_to_gluon = {
 }
 
 all_datasets = list(Ls.keys())
+dev_datasets = ['weather', 'nn5_daily', 'tourism_monthly']
