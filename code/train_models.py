@@ -1,104 +1,14 @@
 import pickle
 import torch
 import numpy as np
-import skorch
 from utils import rmse
 from sklearn.linear_model import LinearRegression
-from tsx.datasets import windowing
-from sklearn.neural_network import MLPRegressor
-from preprocessing import generate_covariates, load_global_data, load_local_data
+from preprocessing import load_global_data, load_local_data
 from seedpy import fixedseed
 from config import DATASET_HYPERPARAMETERS, DEEPAR_HYPERPARAMETERS, FCN_HYPERPARAMETERS
 from os import makedirs
-from tsx.utils import string_to_randomstate, get_device
-from tsx.models import NeuralNetRegressor
-from skorch.callbacks import EarlyStopping
-from Trainer import GlobalTorchDataset
-from models import DeepAR, FCNN
-import torch.nn as nn
-
-# def get_chronos_predictions(ds_name, n_samples=25, batch_size=128):
-#     # Get data
-
-#     # Instantiate model
-#     device = get_device()
-#     pipeline = ChronosPipeline.from_pretrained(
-#         'amazon/chronos-t5-tiny',
-#         device_map=device, 
-#         torch_dtype=torch.bfloat16,
-#     )
-    
-#     Xs, horizons, indices = load_dataset(ds_name, fraction=1)
-
-#     L = 48
-#     chronos_errors = []
-#     linear_errors = []
-#     H = 1
-#     for ds_index in tqdm.tqdm(indices):
-#         X = Xs[ds_index].to_numpy()
-
-#         (x_train, y_train), (x_val, y_val), (x_test, y_test) = preprocess_data(X, L, H)
-
-#         lm = LinearRegression()
-#         lm.fit(x_train, y_train)
-#         preds = lm.predict(x_test).reshape(y_test.shape)
-#         linear_errors.append(rmse(preds, y_test))
-
-#         x_test = torch.from_numpy(x_test).float()
-
-#         if x_test.shape[0] <= batch_size:
-#             preds = pipeline.predict(context=x_test, prediction_length=H, num_samples=n_samples, top_k=45).mean(axis=1).numpy()
-#         else:
-#             preds = []
-#             for i in tqdm.trange(0, len(x_test), batch_size):
-#                 preds.append(pipeline.predict(context=x_test[i:i+batch_size], prediction_length=H, num_samples=n_samples, top_k=15).mean(axis=1).numpy())
-
-#             preds = np.concatenate(preds, axis=0)
-
-#         if H > 1:
-#             preds = preds[:, -1:]
-#         chronos_errors.append(rmse(preds, y_test))
-
-#     print(f'chronos: {min(chronos_errors):.3f} {max(chronos_errors):.3f} {np.mean(chronos_errors):.3f}')
-#     print(f'linear: {min(linear_errors):.3f} {max(linear_errors):.3f} {np.mean(linear_errors):.3f}')
-#     print(np.argmax(chronos_errors))
-
-#     fig, axs = plt.subplots(1, 2, figsize=(12, 3), sharey=True)
-#     axs[0].bar(np.arange(len(linear_errors)), linear_errors)
-#     axs[0].set_title('linear')
-#     axs[1].bar(np.arange(len(chronos_errors)), chronos_errors)
-#     axs[1].set_title('chronos')
-#     fig.tight_layout()
-#     fig.savefig('test.png')
-
-#     fig, axs = plt.subplots(1, 1)
-#     axs.scatter(linear_errors, chronos_errors)
-#     axs.set_xlabel('linear error')
-#     axs.set_ylabel('chronos error')
-#     axs.plot([0, 1], [0, 1], '-', transform=axs.transAxes)
-#     fig.tight_layout()
-#     fig.savefig('scatter.png')
-
-# def train_boosting(ds_name):
-#     from catboost import CatBoostRegressor
-
-#     Xs, horizons, indices = load_dataset(ds_name, fraction=1)
-
-#     L = 10
-
-#     errors = []
-#     for ds_index in tqdm.tqdm(indices):
-#         H = int(horizons[ds_index])
-#         X = Xs[ds_index].to_numpy()
-
-#         (x_train, y_train), (x_val, y_val), (x_test, y_test) = preprocess_data(X, L, H)
-#         model = CatBoostRegressor(iterations=200, depth=10, learning_rate=0.1, random_state=7)
-#         model.fit(x_train, y_train, verbose=False)
-
-#         preds = model.predict(x_test).reshape(y_test.shape)
-#         errors.append(rmse(preds, y_test))
-
-#     print(f'catboost: {min(errors):.3f} {max(errors):.3f} {np.mean(errors):.3f}')
+from tsx.utils import string_to_randomstate
+from models import DeepAR, FCNN, GlobalTorchDataset
 
 def fit_fcnn(ds_name):
     random_state = string_to_randomstate(ds_name, return_seed=True)
