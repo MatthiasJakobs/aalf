@@ -1,8 +1,11 @@
 import numpy as np
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, root_mean_squared_error
 
 def rmse(a, b):
-    return mean_squared_error(a, b, squared=False)
+    if isinstance(a, np.ndarray):
+        return root_mean_squared_error(a, b)
+
+    return ((a - b)**2).mean().sqrt()
 
 # standardized mean_squared_error
 def smse(y_true, y_pred):
