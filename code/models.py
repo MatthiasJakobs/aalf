@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from tsx.utils import get_device, EarlyStopping
 from preprocessing import _load_data, generate_covariates
+from multiprocessing import cpu_count
 
 class UpsampleEnsembleClassifier:
 
@@ -123,8 +124,9 @@ class TorchBase(nn.Module):
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         ES = EarlyStopping(patience=self.patience)
 
-        dl_train = torch.utils.data.DataLoader(ds_train, batch_size=self.batch_size, shuffle=True, num_workers=2)
-        dl_val = torch.utils.data.DataLoader(ds_val, batch_size=self.batch_size, shuffle=False, num_workers=2)
+        num_workers = min(16, cpu_count())
+        dl_train = torch.utils.data.DataLoader(ds_train, batch_size=self.batch_size, shuffle=True, num_workers=num_workers)
+        dl_val = torch.utils.data.DataLoader(ds_val, batch_size=self.batch_size, shuffle=False, num_workers=num_workers)
 
         if self.limit_train_batches is not None:
             n_batches_per_epoch = min(self.limit_train_batches, len(dl_train))
@@ -135,7 +137,7 @@ class TorchBase(nn.Module):
             epoch_loss = self.train_epoch(epoch, dl_train, n_batches_per_epoch)
             val_loss = self.evaluate(epoch, dl_val)
 
-            ES.update(val_loss)
+            ES.update(val_loss, self.state_dict())
             if ES.best_score == val_loss:
                 postfix = '(best epoch)'
             else:
@@ -148,6 +150,9 @@ class TorchBase(nn.Module):
                 if verbose:
                     print('Stopped')
                 break
+
+        # Revert back to best epoch
+        self.load_state_dict(ES.get_checkpoint())
 
 class DeepAR(TorchBase):
     def __init__(self, n_channel=1, hidden_size=50, num_layers=2, dropout=0.1, **kwargs):
@@ -263,6 +268,7 @@ class FCNN(TorchBase):
         for batch_X, batch_y in tqdm.tqdm(dl, total=n_batches_per_epoch, desc=f'epoch {e} train', disable=(not self.show_progress)):
             batch_X = batch_X.to(self.device)
             batch_y = batch_y.to(self.device)
+            batch_size = batch_X.shape[0]
 
             batch_X = batch_X.reshape(batch_size, -1)
 
@@ -288,6 +294,7 @@ class FCNN(TorchBase):
         for batch_X, batch_y in tqdm.tqdm(dl, total=len(dl), desc=f'epoch {e} evaluation', disable=(not self.show_progress)):
             batch_X = batch_X.to(self.device)
             batch_y = batch_y.to(self.device)
+            batch_size = batch_X.shape[0]
 
             batch_X = batch_X.reshape(batch_size, -1)
 
