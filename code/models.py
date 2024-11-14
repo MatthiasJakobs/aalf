@@ -98,7 +98,7 @@ class GlobalTorchDataset(torch.utils.data.Dataset):
     
 
 class TorchBase(nn.Module):
-    def __init__(self, learning_rate=2e-3, max_epochs=100, limit_train_batches=None, batch_size=64, device=None, patience=10, show_progress=False):
+    def __init__(self, learning_rate=2e-3, max_epochs=100, limit_train_batches=None, batch_size=64, device=None, patience=10, show_progress=True):
         super().__init__()
         self.device = get_device() if device is None else device
         self.learning_rate = learning_rate
@@ -295,7 +295,7 @@ class FCNN(TorchBase):
 
             predictions = self.model(batch_X).reshape(batch_y.shape)
 
-            loss += (batch_y - predictions).sum()
+            loss += ((batch_y - predictions)**2).sum()
 
         return np.sqrt((loss / len(dl.dataset)).cpu().numpy())
 
