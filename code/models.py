@@ -115,7 +115,7 @@ class TorchBase(nn.Module):
     def train_epoch(self, e, dl, n_batches_per_epoch):
         pass
     
-    @torch.no_grad
+    @torch.no_grad()
     def evaluate(self, e, dl):
         pass
 
@@ -123,8 +123,8 @@ class TorchBase(nn.Module):
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         ES = EarlyStopping(patience=self.patience)
 
-        dl_train = torch.utils.data.DataLoader(ds_train, batch_size=self.batch_size, shuffle=True, num_workers=16)
-        dl_val = torch.utils.data.DataLoader(ds_val, batch_size=self.batch_size, shuffle=False, num_workers=16)
+        dl_train = torch.utils.data.DataLoader(ds_train, batch_size=self.batch_size, shuffle=True, num_workers=2)
+        dl_val = torch.utils.data.DataLoader(ds_val, batch_size=self.batch_size, shuffle=False, num_workers=2)
 
         if self.limit_train_batches is not None:
             n_batches_per_epoch = min(self.limit_train_batches, len(dl_train))
@@ -225,7 +225,7 @@ class DeepAR(TorchBase):
 
         return epoch_loss / n_batches_per_epoch
     
-    @torch.no_grad
+    @torch.no_grad()
     def evaluate(self, e, dl):
         self.eval()
         squared_errors = 0
@@ -264,7 +264,6 @@ class FCNN(TorchBase):
             batch_X = batch_X.to(self.device)
             batch_y = batch_y.to(self.device)
 
-            batch_size = batch_X.shape[0]
             batch_X = batch_X.reshape(batch_size, -1)
 
             predictions = self.model(batch_X)
@@ -283,14 +282,13 @@ class FCNN(TorchBase):
 
         return epoch_loss / n_batches_per_epoch
 
-    @torch.no_grad
+    @torch.no_grad()
     def evaluate(self, e, dl):
         loss = 0.0
         for batch_X, batch_y in tqdm.tqdm(dl, total=len(dl), desc=f'epoch {e} evaluation', disable=(not self.show_progress)):
             batch_X = batch_X.to(self.device)
             batch_y = batch_y.to(self.device)
 
-            batch_size = batch_X.shape[0]
             batch_X = batch_X.reshape(batch_size, -1)
 
             predictions = self.model(batch_X).reshape(batch_y.shape)
@@ -299,7 +297,7 @@ class FCNN(TorchBase):
 
         return np.sqrt((loss / len(dl.dataset)).cpu().numpy())
 
-    @torch.no_grad
+    @torch.no_grad()
     def predict(self, X):
         # Ensure the model is in evaluation mode
         self.model.eval()

@@ -50,7 +50,7 @@ def _load_data(ds_name, return_start_dates=False):
     else:
         return X_train, X_val, X_test
 
-def load_local_data(ds_name, L, H):
+def load_local_data(ds_name, L, H, verbose=True):
     _x_train = []
     _x_val = []
     _x_test = []
@@ -59,7 +59,7 @@ def load_local_data(ds_name, L, H):
     _y_test = []
 
     X_train, X_val, X_test = _load_data(ds_name)
-    for ds_index in tqdm.trange(len(X_train), desc=f'[{ds_name}] get local data', disable=False):
+    for ds_index in tqdm.trange(len(X_train), desc=f'[{ds_name}] get local data', disable=(not verbose)):
         x_train, y_train = windowing(X_train[ds_index], L=L, H=H)
         x_val, y_val = windowing(X_val[ds_index], L=L, H=H)
         x_test, y_test = windowing(X_test[ds_index], L=L, H=H)
@@ -75,7 +75,7 @@ def load_local_data(ds_name, L, H):
 
     return (_x_train, _y_train), (_x_val, _y_val), (_x_test, _y_test)
 
-def load_global_data(ds_name, L, H, freq):
+def load_global_data(ds_name, L, H, freq, verbose=True):
     _X_train, _X_val, _X_test, start_dates = _load_data(ds_name, return_start_dates=True)
 
     train_data_X = []
@@ -85,7 +85,7 @@ def load_global_data(ds_name, L, H, freq):
     val_data_y = []
     test_data_y = []
 
-    for ds_index in tqdm.trange(len(_X_train), desc=f'[{ds_name}] get global data', disable=False):
+    for ds_index in tqdm.trange(len(_X_train), desc=f'[{ds_name}] get global data', disable=(not verbose)):
         # Create entire TS again for covariate generation
         X_train = _X_train[ds_index]
         X_val = _X_val[ds_index]
@@ -126,4 +126,17 @@ def load_global_data(ds_name, L, H, freq):
 
     return (X_train, y_train), (val_data_X, val_data_y), (test_data_X, test_data_y)
 
+def main():
+    from config import ALL_DATASETS
+    total = 0
+    for ds_name in ALL_DATASETS:
+        ds = load_monash(ds_name)
+        Xs = ds['series_value']
+        lengths = [len(X) for X in Xs]
+        total += len(Xs)
+        print(ds_name, 'n_series', len(Xs), 'min_length', min(lengths), 'max_length', max(lengths), 'mean_length', np.mean(lengths))
+    print('---')
+    print('Total', total)
 
+if __name__ == '__main__':
+    main()
