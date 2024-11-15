@@ -7,17 +7,17 @@ DATASET_HYPERPARAMETERS = {
 }
 
 DEEPAR_HYPERPARAMETERS = {
-    'australian_electricity_demand': {'num_layers': 1, 'hidden_size': 200, 'max_epochs':100, 'limit_train_batches': 200, 'batch_size': 200, 'dropout': 0 },
-    'weather': {'num_layers': 1, 'hidden_size': 25, 'max_epochs':100, 'limit_train_batches': None, 'batch_size': 200, 'dropout': 0 },
+    'australian_electricity_demand': {'num_layers': 1, 'hidden_size': 200, 'max_epochs':100, 'limit_train_batches': 1024, 'batch_size': 200, 'dropout': 0 },
+    'weather': {'num_layers': 1, 'hidden_size': 25, 'max_epochs':100, 'limit_train_batches': 10_000, 'batch_size': 200, 'dropout': 0 },
     'nn5_daily_nomissing': {'num_layers': 1, 'hidden_size': 25, 'max_epochs':100, 'limit_train_batches': None, 'batch_size': 200, 'dropout': 0 },
-    'pedestrian_counts': {'num_layers': 1, 'hidden_size': 100, 'max_epochs':200, 'limit_train_batches': 200, 'batch_size': 200, 'dropout': 0 },
+    'pedestrian_counts': {'num_layers': 1, 'hidden_size': 100, 'max_epochs':200, 'limit_train_batches': None, 'batch_size': 200, 'dropout': 0 },
     'kdd_cup_nomissing': {'num_layers': 1, 'hidden_size': 100, 'max_epochs':100, 'limit_train_batches': None, 'batch_size': 200, 'dropout': 0, 'show_progress': True },
 }
 
 FCN_HYPERPARAMETERS = {
-    'australian_electricity_demand': {'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': 200},
+    'australian_electricity_demand': {'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': 1024},
     'nn5_daily_nomissing': {'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
-    'weather': {'hidden_size': 64, 'max_epochs': 10, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
+    'weather': {'hidden_size': 64, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': 10_000},
     'pedestrian_counts': {'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
     'kdd_cup_nomissing': {'hidden_size': 64, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
 }
