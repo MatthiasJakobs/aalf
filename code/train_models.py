@@ -76,82 +76,21 @@ def fit_deepar(ds_name):
         losses.append(loss)
     print('deepar', np.mean(losses))
 
-    with open(f'models/{ds_name}/deepar.pickle', 'wb') as _f:
-        pickle.dump(DAR, _f)
-
-def evaluate_models(ds_name):
-    dsh = DATASET_HYPERPARAMETERS[ds_name]
-    L = dsh['L']
-    freq = dsh['freq']
-
-    (local_X_train, local_y_train), (_, _), (local_X_test, local_y_test) = load_local_data(ds_name, L=L, H=1)
-    (_, _), (_, _), (global_X_test, global_y_test) = load_global_data(ds_name, L=L, H=1, freq=freq)
-
-    all_loss_values = {'linear': [], 'fcnn': [], 'deepar': []}
-
-    for m_name in ['linear', 'fcnn', 'deepar']:
-
-        if m_name == 'linear':
-            losses = []
-            for ds_index in range(len(local_X_train)):
-                m = LinearRegression()
-                m.fit(local_X_train[ds_index], local_y_train[ds_index])
-                test_preds = m.predict(local_X_test[ds_index]).reshape(local_y_test[ds_index].shape)
-                loss = rmse(test_preds, local_y_test[ds_index])
-                losses.append(loss)
-                all_loss_values['linear'].append(loss)
-            print(f'{m_name}: {np.mean(losses):.3f}')
-            continue
-        elif m_name == 'deepar':
-            try:
-                with open(f'models/{ds_name}/deepar.pickle', 'rb') as f:
-                    m = pickle.load(f).to('cpu')
-                    m.device = 'cpu'
-                    m.lstm.flatten_parameters()
-            except FileNotFoundError:
-                continue
-        elif m_name == 'fcnn':
-            try:
-                with open(f'models/{ds_name}/fcnn.pickle', 'rb') as f:
-                    m = pickle.load(f)
-                    m.device = 'cpu'
-                    m.model = m.model.to('cpu')
-            except FileNotFoundError:
-                continue
-        else:
-            raise NotImplementedError('Unknown model', m_name)
-        losses = []
-        for X_test, y_test in zip(global_X_test, global_y_test):
-            if m_name == 'fcnn':
-                X_test = X_test.reshape(X_test.shape[0], -1)
-            test_preds = m.predict(X_test).reshape(y_test.shape)
-            loss = rmse(test_preds, y_test)
-            losses.append(loss)
-            all_loss_values[m_name].append(loss)
-        print(f'{m_name}: {np.mean(losses):.3f}')
-
-    print('---'*30)
-    return pd.DataFrame({k: v for k, v in all_loss_values.items() if len(v) > 0})
-
+    # with open(f'models/{ds_name}/deepar.pickle', 'wb') as _f:
+    #     pickle.dump(DAR, _f)
 
 def main():
-    fit_deepar('weather')
+    # fit_deepar('weather')
     # fit_deepar('nn5_daily_nomissing')
-    # fit_deepar('australian_electricity_demand')
+    fit_deepar('australian_electricity_demand')
     # fit_deepar('pedestrian_counts')
-    fit_deepar('kdd_cup_nomissing')
+    # fit_deepar('kdd_cup_nomissing')
 
     # fit_fcnn('weather')
     # fit_fcnn('nn5_daily_nomissing')
     # fit_fcnn('australian_electricity_demand')
     # fit_fcnn('pedestrian_counts')
     # fit_fcnn('kdd_cup_nomissing')
-
-    # evaluate_models('weather')
-    # evaluate_models('nn5_daily_nomissing')
-    # evaluate_models('australian_electricity_demand')
-    # evaluate_models('pedestrian_counts')
-    # evaluate_models('kdd_cup_nomissing')
 
 if __name__ == '__main__':
     main()
