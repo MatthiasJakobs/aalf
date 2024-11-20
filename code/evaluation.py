@@ -28,8 +28,8 @@ def evaluate_models(ds_name, verbose=False):
     loss_fn_names = ['rmse', 'smape']
     model_names = ['linear', 'fcnn', 'deepar']
 
-    (local_X_train, local_y_train), (_, _), (local_X_test, local_y_test) = load_local_data(ds_name, L=L, H=1, verbose=verbose)
-    (_, _), (_, _), (global_X_test, global_y_test) = load_global_data(ds_name, L=L, H=1, freq=freq, verbose=verbose)
+    (local_X_train, local_y_train), (_, _), (local_X_test, local_y_test) = load_local_data(ds_name, L=L, H=1, return_split=['train', 'test'], verbose=verbose)
+    (_, _), (_, _), (global_X_test, global_y_test) = load_global_data(ds_name, L=L, H=1, freq=freq, return_split=['test'], verbose=verbose)
 
     all_loss_values = {f'{m_name}_{loss_name}': [] for m_name, loss_name in product(model_names, loss_fn_names)}
     all_predictions = {m_name: [] for m_name in model_names + ['y']}
@@ -142,7 +142,7 @@ def generate_latex_table():
 def main():
     # generate_cdd_plot(loss_fn='rmse')
     for ds_name in ['wind_farms_nomissing']:
-        evaluate_models(ds_name)
+        evaluate_models(ds_name, verbose=True)
     #generate_latex_table()
 
 if __name__ == '__main__':

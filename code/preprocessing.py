@@ -38,8 +38,11 @@ def _load_data(ds_name, return_start_dates=False):
     X_val = []
     X_test = []
 
-    for X in Xs:
+    for ds_index, X in enumerate(Xs):
         x_train, x_val, x_test = split_proportion(X.to_numpy(), (0.8, 0.1, 0.1))
+        if (x_train[0] == x_train).all() or (x_val[0] == x_val).all() or (x_test[0] == x_test).all():
+            print('Skipped', ds_index)
+            continue
         scaler = StandardScaler()
         x_train = scaler.fit_transform(x_train.reshape(-1, 1)).squeeze()
         x_val = scaler.transform(x_val.reshape(-1, 1)).squeeze()
@@ -54,7 +57,7 @@ def _load_data(ds_name, return_start_dates=False):
     else:
         return X_train, X_val, X_test
 
-def load_local_data(ds_name, L, H, verbose=True):
+def load_local_data(ds_name, L, H, return_split=None, verbose=True):
     _x_train = []
     _x_val = []
     _x_test = []
@@ -62,24 +65,30 @@ def load_local_data(ds_name, L, H, verbose=True):
     _y_val = []
     _y_test = []
 
+    if return_split is None:
+        return_split = ['train', 'val', 'test']
+    else:
+        if isinstance(return_split, str):
+            return_split = [return_split]
+
     X_train, X_val, X_test = _load_data(ds_name)
     for ds_index in tqdm.trange(len(X_train), desc=f'[{ds_name}] get local data', disable=(not verbose)):
-        x_train, y_train = windowing(X_train[ds_index], L=L, H=H)
-        x_val, y_val = windowing(X_val[ds_index], L=L, H=H)
-        x_test, y_test = windowing(X_test[ds_index], L=L, H=H)
-
-        _x_train.append(x_train)
-        _x_val.append(x_val)
-        _x_test.append(x_test)
-
-        _y_train.append(y_train)
-        _y_val.append(y_val)
-        _y_test.append(y_test)
-
+        if 'train' in return_split:
+            x_train, y_train = windowing(X_train[ds_index], L=L, H=H)
+            _x_train.append(x_train)
+            _y_train.append(y_train)
+        if 'val' in return_split:
+            x_val, y_val = windowing(X_val[ds_index], L=L, H=H)
+            _x_val.append(x_val)
+            _y_val.append(y_val)
+        if 'test' in return_split:
+            x_test, y_test = windowing(X_test[ds_index], L=L, H=H)
+            _x_test.append(x_test)
+            _y_test.append(y_test)
 
     return (_x_train, _y_train), (_x_val, _y_val), (_x_test, _y_test)
 
-def load_global_data(ds_name, L, H, freq, verbose=True):
+def load_global_data(ds_name, L, H, freq, return_split=None, verbose=True):
     _X_train, _X_val, _X_test, start_dates = _load_data(ds_name, return_start_dates=True)
 
     train_data_X = []
@@ -88,6 +97,12 @@ def load_global_data(ds_name, L, H, freq, verbose=True):
     train_data_y = []
     val_data_y = []
     test_data_y = []
+
+    if return_split is None:
+        return_split = ['train', 'val', 'test']
+    else:
+        if isinstance(return_split, str):
+            return_split = [return_split]
 
     for ds_index in tqdm.trange(len(_X_train), desc=f'[{ds_name}] get global data', disable=(not verbose)):
         # Create entire TS again for covariate generation
@@ -100,35 +115,37 @@ def load_global_data(ds_name, L, H, freq, verbose=True):
         train_length = len(X_train)
         val_length = len(X_val)
 
-        C_train = covariates[:train_length]
-        C_val = covariates[train_length:train_length+val_length]
-        C_test = covariates[train_length+val_length:]
-        
-        x_train, y_train = windowing(X_train, L=L, H=H)
-        x_val, y_val = windowing(X_val, L=L, H=H)
-        x_test, y_test = windowing(X_test, L=L, H=H)
-        c_train, _ = windowing(C_train, L=L, H=H)
-        c_val, _ = windowing(C_val, L=L, H=H)
-        c_test, _ = windowing(C_test, L=L, H=H)
+        if 'train' in return_split:
+            C_train = covariates[:train_length]
+            x_train, y_train = windowing(X_train, L=L, H=H)
+            c_train, _ = windowing(C_train, L=L, H=H)
+            x_train = x_train[..., None]
+            x_train = np.concatenate([x_train, c_train], axis=-1)
+            train_data_X.append(x_train)
+            train_data_y.append(y_train)
+        if 'val' in return_split:
+            C_val = covariates[train_length:train_length+val_length]
+            x_val, y_val = windowing(X_val, L=L, H=H)
+            c_val, _ = windowing(C_val, L=L, H=H)
+            x_val = x_val[..., None]
+            x_val = np.concatenate([x_val, c_val], axis=-1)
+            val_data_y.append(y_val)
+            val_data_X.append(x_val)
 
-        x_train = x_train[..., None]
-        x_val = x_val[..., None]
-        x_test = x_test[..., None]
-        x_train = np.concatenate([x_train, c_train], axis=-1)
-        x_val = np.concatenate([x_val, c_val], axis=-1)
-        x_test = np.concatenate([x_test, c_test], axis=-1)
+        if 'test' in return_split:
+            C_test = covariates[train_length+val_length:]
+            x_test, y_test = windowing(X_test, L=L, H=H)
+            c_test, _ = windowing(C_test, L=L, H=H)
+            x_test = x_test[..., None]
+            x_test = np.concatenate([x_test, c_test], axis=-1)
+            test_data_X.append(x_test)
+            test_data_y.append(y_test)
 
-        train_data_X.append(x_train)
-        train_data_y.append(y_train)
-        val_data_X.append(x_val)
-        val_data_y.append(y_val)
-        test_data_X.append(x_test)
-        test_data_y.append(y_test)
+    if 'train' in return_split:
+        train_data_X = np.concatenate(train_data_X)
+        train_data_y = np.concatenate(train_data_y)
 
-    X_train = np.concatenate(train_data_X)
-    y_train = np.concatenate(train_data_y)
-
-    return (X_train, y_train), (val_data_X, val_data_y), (test_data_X, test_data_y)
+    return (train_data_X, train_data_y), (val_data_X, val_data_y), (test_data_X, test_data_y)
 
 def main():
     from config import ALL_DATASETS
