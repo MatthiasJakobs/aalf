@@ -4,6 +4,7 @@ import pandas as pd
 from tsx.datasets.monash import load_monash
 from tsx.datasets import split_proportion, windowing
 from scipy.stats import zscore
+from sklearn.preprocessing import StandardScaler
 
 def generate_covariates(length, freq, start_date=None):
     def _zscore(X):
@@ -39,11 +40,14 @@ def _load_data(ds_name, return_start_dates=False):
 
     for X in Xs:
         x_train, x_val, x_test = split_proportion(X.to_numpy(), (0.8, 0.1, 0.1))
-        mu, std = np.mean(x_train), np.std(x_train)
+        scaler = StandardScaler()
+        x_train = scaler.fit_transform(x_train.reshape(-1, 1)).squeeze()
+        x_val = scaler.transform(x_val.reshape(-1, 1)).squeeze()
+        x_test = scaler.transform(x_test.reshape(-1, 1)).squeeze()
 
-        X_train.append((x_train - mu) / std)
-        X_val.append((x_val - mu) / std)
-        X_test.append((x_test - mu) / std)
+        X_train.append(x_train)
+        X_val.append(x_val)
+        X_test.append(x_test)
 
     if return_start_dates:
         return X_train, X_val, X_test, start_dates

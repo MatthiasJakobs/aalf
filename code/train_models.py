@@ -32,6 +32,9 @@ def fit_fcnn(ds_name):
         mlp = FCNN(L, **FCN_HYPERPARAMETERS[ds_name])
         mlp.fit(ds_train, ds_val, verbose=True)
 
+    with open(f'models/{ds_name}/fcnn.pickle', 'wb') as _f:
+        pickle.dump(mlp, _f)
+
     (_, _), (_, _), (X_test, y_test) = load_global_data(ds_name, L=L, H=1, freq=freq)
 
     losses = []
@@ -41,10 +44,6 @@ def fit_fcnn(ds_name):
         loss = rmse(test_preds, _y_test)
         losses.append(loss)
     print('fcnn', np.mean(losses))
-
-    with open(f'models/{ds_name}/fcnn.pickle', 'wb') as _f:
-        pickle.dump(mlp, _f)
-
 
 def fit_deepar(ds_name):
     random_state = string_to_randomstate(ds_name, return_seed=True)
@@ -67,6 +66,9 @@ def fit_deepar(ds_name):
         DAR = DeepAR(n_channel=4, **DEEPAR_HYPERPARAMETERS[ds_name])
         DAR.fit(ds_train, ds_val, verbose=True)
 
+    with open(f'models/{ds_name}/deepar.pickle', 'wb') as _f:
+        pickle.dump(DAR, _f)
+
     (_, _), (_, _), (X_test, y_test) = load_global_data(ds_name, L=L, H=1, freq=freq)
 
     losses = []
@@ -76,21 +78,20 @@ def fit_deepar(ds_name):
         losses.append(loss)
     print('deepar', np.mean(losses))
 
-    # with open(f'models/{ds_name}/deepar.pickle', 'wb') as _f:
-    #     pickle.dump(DAR, _f)
-
 def main():
     # fit_deepar('weather')
     # fit_deepar('nn5_daily_nomissing')
-    fit_deepar('australian_electricity_demand')
+    # fit_deepar('australian_electricity_demand')
     # fit_deepar('pedestrian_counts')
     # fit_deepar('kdd_cup_nomissing')
+    fit_deepar('wind_farms_nomissing')
 
     # fit_fcnn('weather')
     # fit_fcnn('nn5_daily_nomissing')
     # fit_fcnn('australian_electricity_demand')
     # fit_fcnn('pedestrian_counts')
     # fit_fcnn('kdd_cup_nomissing')
+    # fit_fcnn('wind_farms_nomissing')
 
 if __name__ == '__main__':
     main()

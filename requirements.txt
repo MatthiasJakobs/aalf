@@ -1,10 +1,11 @@
 numpy
-scikit-learn==1.2.0
+scikit-learn
 pandas
 tqdm
 matplotlib
 seedpy
 scipy
 joblib
-git+https://github.com/MatthiasJakobs/tsx@7b5c3c8e166eda9245e689e0927ae53ff9f5c1ca
-git+https://github.com/MatthiasJakobs/critdd
+seedpy
+git+https://github.com/MatthiasJakobs/tsx@dev
+git+https://github.com/mirkobunse/critdd
