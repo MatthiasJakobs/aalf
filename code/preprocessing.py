@@ -41,7 +41,6 @@ def _load_data(ds_name, return_start_dates=False):
     for ds_index, X in enumerate(Xs):
         x_train, x_val, x_test = split_proportion(X.to_numpy(), (0.8, 0.1, 0.1))
         if (x_train[0] == x_train).all() or (x_val[0] == x_val).all() or (x_test[0] == x_test).all():
-            print('Skipped', ds_index)
             continue
         scaler = StandardScaler()
         x_train = scaler.fit_transform(x_train.reshape(-1, 1)).squeeze()
