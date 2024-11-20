@@ -151,11 +151,12 @@ def main():
     from config import ALL_DATASETS
     total = 0
     for ds_name in ALL_DATASETS:
-        ds = load_monash(ds_name)
-        Xs = ds['series_value']
-        lengths = [len(X) for X in Xs]
-        total += len(Xs)
-        print(ds_name, 'n_series', len(Xs), 'min_length', min(lengths), 'max_length', max(lengths), 'mean_length', np.mean(lengths))
+        X_train, X_val, X_test = _load_data(ds_name)
+        n_series = len(X_train)
+        total += n_series
+
+        lengths = [len(x_train)+len(x_val)+len(x_test) for (x_train, x_val, x_test) in zip(X_train, X_val, X_test)]
+        print(ds_name, 'n_series', n_series, 'min_length', min(lengths), 'max_length', max(lengths), 'mean_length', np.mean(lengths))
     print('---')
     print('Total', total)
 
