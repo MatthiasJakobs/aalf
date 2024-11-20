@@ -23,3 +23,23 @@ FCN_HYPERPARAMETERS = {
 }
 
 ALL_DATASETS = ['australian_electricity_demand', 'nn5_daily_nomissing', 'weather', 'pedestrian_counts', 'kdd_cup_nomissing']
+
+# Some maps for nicer rendered graphics
+DS_MAP = {
+    'pedestrian_counts': 'Pedestrian Counts',
+    'nn5_daily_nomissing': 'NN5 (Daily)',
+    'kdd_cup_nomissing': 'KDD Cup',
+    'australian_electricity_demand': 'Aus. Elect. Demand',
+    'weather': 'Weather',
+}
+
+MODEL_MAP = {
+    'linear': 'Linear',
+    'fcnn': 'FCNN',
+    'deepar': 'DeepAR',
+}
+
+LOSS_MAP = {
+    'rmse': 'RMSE',
+    'smape': 'SMAPE',
+}
