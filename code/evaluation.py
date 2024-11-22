@@ -143,7 +143,7 @@ def generate_latex_table():
 
 def main():
     # generate_cdd_plot(loss_fn='rmse')
-    for ds_name in ['fred_md']:
+    for ds_name in ['solar_10_minutes']:
         evaluate_models(ds_name, verbose=True)
     #generate_latex_table()
 

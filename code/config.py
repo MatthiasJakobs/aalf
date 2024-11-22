@@ -4,8 +4,8 @@ DATASET_HYPERPARAMETERS = {
     'nn5_daily_nomissing': {'freq': '1d', 'L': 14 },
     'weather': {'freq': '1d', 'L': 14 },
     'kdd_cup_nomissing': {'freq': '1h', 'L': 24},
-    'electricity_hourly': {'freq': '1h', 'L': 24, 'n_channels': 321},
-    'fred_md': {'freq': '1ME', 'L': 12, 'n_channels': 107},
+    #'electricity_hourly': {'freq': '1h', 'L': 24, 'n_channels': 321},
+    'solar_10_minutes': {'freq': '10min', 'L': 6*24, 'n_channels': 137},
 }
 
 DEEPAR_HYPERPARAMETERS = {
@@ -14,8 +14,7 @@ DEEPAR_HYPERPARAMETERS = {
     'nn5_daily_nomissing': {'num_layers': 1, 'hidden_size': 25, 'max_epochs':100, 'limit_train_batches': None, 'batch_size': 256, 'dropout': 0 },
     'pedestrian_counts': {'num_layers': 1, 'hidden_size': 100, 'max_epochs':200, 'limit_train_batches': None, 'batch_size': 256, 'dropout': 0 },
     'kdd_cup_nomissing': {'num_layers': 1, 'hidden_size': 25, 'max_epochs':100, 'limit_train_batches': None, 'batch_size': 256, 'dropout': 0, 'show_progress': True },
-    'electricity_hourly': {'learning_rate': 1e-3, 'num_layers': 1, 'hidden_size': 25, 'max_epochs': 50, 'limit_train_batches': None, 'batch_size': 64, 'dropout': 0 },
-    'fred_md': {'num_layers': 1, 'hidden_size': 25, 'max_epochs': 10, 'limit_train_batches': None, 'batch_size': 64, 'dropout': 0 },
+    #'electricity_hourly': {'learning_rate': 1e-3, 'num_layers': 1, 'hidden_size': 25, 'max_epochs': 50, 'limit_train_batches': None, 'batch_size': 64, 'dropout': 0 },
 }
 
 FCN_HYPERPARAMETERS = {
@@ -24,15 +23,15 @@ FCN_HYPERPARAMETERS = {
     'weather': {'hidden_size': 64, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': 10_000},
     'pedestrian_counts': {'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
     'kdd_cup_nomissing': {'max_epochs': 100, 'learning_rate': 6e-4, 'batch_size': 256, 'limit_train_batches': None},
-    'electricity_hourly': {'hidden_size': 512, 'max_epochs': 100, 'learning_rate': 6e-4, 'batch_size': 64, 'limit_train_batches': None},
-    'fred_md': {'max_epochs': 100, 'learning_rate': 2e-3, 'batch_size': 16, 'limit_train_batches': None},
+    #'electricity_hourly': {'hidden_size': 512, 'max_epochs': 100, 'learning_rate': 6e-4, 'batch_size': 64, 'limit_train_batches': None},
+    'solar_10_minutes': {'hidden_size': 128, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
 }
 
 ALL_DATASETS = ['australian_electricity_demand', 'nn5_daily_nomissing', 'weather', 'pedestrian_counts', 'kdd_cup_nomissing']
 
 MULTIVARIATE_DATASETS = [
-    'electricity_hourly',
-    'fred_md'
+    #'electricity_hourly',
+    'solar_10_minutes'
 ]
 
 # Some maps for nicer rendered graphics
@@ -42,8 +41,8 @@ DS_MAP = {
     'kdd_cup_nomissing': 'KDD Cup',
     'australian_electricity_demand': 'Aus. Elect. Demand',
     'weather': 'Weather',
-    'electricity_hourly': 'Electricity (Hourly)',
-    'fred_md': 'FRED-MD'
+    #'electricity_hourly': 'Electricity (Hourly)',
+    'solar_10_minutes': 'Solar'
 }
 
 MODEL_MAP = {
