@@ -93,14 +93,15 @@ def main():
     # fit_deepar('australian_electricity_demand')
     # fit_deepar('pedestrian_counts')
     # fit_deepar('kdd_cup_nomissing')
-    fit_deepar('electricity_hourly')
+    # fit_deepar('electricity_hourly')
+    fit_deepar('fred_md')
 
     # fit_fcnn('weather')
     # fit_fcnn('nn5_daily_nomissing')
     # fit_fcnn('australian_electricity_demand')
     # fit_fcnn('pedestrian_counts')
     # fit_fcnn('kdd_cup_nomissing')
-    # fit_fcnn('electricity_hourly')
+    # fit_fcnn('fred_md')
 
 if __name__ == '__main__':
     main()

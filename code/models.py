@@ -296,7 +296,7 @@ class DeepVAR(TorchBase):
 
         for c in range(channel):
             _x = torch.atleast_3d(x[..., c])
-            h_c_t, (_, _) = self.lstm(_x, (h0, c0))
+            _, (h_c_t, _) = self.lstm(_x, (h0, c0))
             h_c_t = h_c_t.reshape(batch_size, -1)
 
             # Add covariates to embedding
@@ -434,7 +434,8 @@ class FCNN(TorchBase):
 
     @torch.no_grad()
     def evaluate(self, e, dl):
-        loss = 0.0
+        criterion = nn.MSELoss()
+        epoch_loss = 0.0
         for batch_X, batch_y in tqdm.tqdm(dl, total=len(dl), desc=f'epoch {e} evaluation', disable=(not self.show_progress)):
             batch_X = batch_X.to(self.device)
             batch_y = batch_y.to(self.device)
@@ -443,10 +444,11 @@ class FCNN(TorchBase):
             batch_X = batch_X.reshape(batch_size, -1)
 
             predictions = self.model(batch_X).reshape(batch_y.shape)
+            loss = criterion(predictions, batch_y)
 
-            loss += ((batch_y - predictions)**2).sum()
+            epoch_loss += loss.item()
 
-        return np.sqrt((loss / len(dl.dataset)).cpu().numpy())
+        return epoch_loss / len(dl)
 
     @torch.no_grad()
     def predict(self, X):
