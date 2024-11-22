@@ -5,6 +5,7 @@ from tsx.datasets.monash import load_monash
 from tsx.datasets import split_proportion, windowing
 from scipy.stats import zscore
 from sklearn.preprocessing import StandardScaler
+from config import MULTIVARIATE_DATASETS
 
 def generate_covariates(length, freq, start_date=None):
     def _zscore(X):
@@ -24,28 +25,41 @@ def generate_covariates(length, freq, start_date=None):
 
     return covariates
 
-
 def _load_data(ds_name, return_start_dates=False):
     ds = load_monash(ds_name)
-    Xs = ds['series_value']
-    indices = range(len(Xs))
+    Xs = [x.to_numpy() for x in ds['series_value']]
+
     if 'start_timestamp' in ds.keys():
         start_dates = ds['start_timestamp'].tolist()
     else:
         start_dates = [pd.Timestamp('1980-1-1') for _ in indices]
+
+    is_multivariate = ds_name in MULTIVARIATE_DATASETS
+
+    if is_multivariate:    
+        Xs = np.stack(Xs).T[None, ...]
+        indices = [0]
+        start_dates = [start_dates[0]]
+    else:
+        indices = range(len(Xs))
 
     X_train = []
     X_val = []
     X_test = []
 
     for ds_index, X in enumerate(Xs):
-        x_train, x_val, x_test = split_proportion(X.to_numpy(), (0.8, 0.1, 0.1))
-        if (x_train[0] == x_train).all() or (x_val[0] == x_val).all() or (x_test[0] == x_test).all():
-            continue
+        x_train, x_val, x_test = split_proportion(X, (0.8, 0.1, 0.1))
+        
+        if not is_multivariate:
+            if (x_train[0] == x_train).all() or (x_val[0] == x_val).all() or (x_test[0] == x_test).all():
+                continue
+            x_train = x_train.reshape(-1, 1)
+            x_val = x_val.reshape(-1, 1)
+            x_test = x_test.reshape(-1, 1)
         scaler = StandardScaler()
-        x_train = scaler.fit_transform(x_train.reshape(-1, 1)).squeeze()
-        x_val = scaler.transform(x_val.reshape(-1, 1)).squeeze()
-        x_test = scaler.transform(x_test.reshape(-1, 1)).squeeze()
+        x_train = scaler.fit_transform(x_train).squeeze()
+        x_val = scaler.transform(x_val).squeeze()
+        x_test = scaler.transform(x_test).squeeze()
 
         X_train.append(x_train)
         X_val.append(x_val)
@@ -118,7 +132,7 @@ def load_global_data(ds_name, L, H, freq, return_split=None, verbose=True):
             C_train = covariates[:train_length]
             x_train, y_train = windowing(X_train, L=L, H=H)
             c_train, _ = windowing(C_train, L=L, H=H)
-            x_train = x_train[..., None]
+            x_train = np.atleast_3d(x_train)
             x_train = np.concatenate([x_train, c_train], axis=-1)
             train_data_X.append(x_train)
             train_data_y.append(y_train)
@@ -126,7 +140,7 @@ def load_global_data(ds_name, L, H, freq, return_split=None, verbose=True):
             C_val = covariates[train_length:train_length+val_length]
             x_val, y_val = windowing(X_val, L=L, H=H)
             c_val, _ = windowing(C_val, L=L, H=H)
-            x_val = x_val[..., None]
+            x_val = np.atleast_3d(x_val)
             x_val = np.concatenate([x_val, c_val], axis=-1)
             val_data_y.append(y_val)
             val_data_X.append(x_val)
@@ -135,7 +149,7 @@ def load_global_data(ds_name, L, H, freq, return_split=None, verbose=True):
             C_test = covariates[train_length+val_length:]
             x_test, y_test = windowing(X_test, L=L, H=H)
             c_test, _ = windowing(C_test, L=L, H=H)
-            x_test = x_test[..., None]
+            x_test = np.atleast_3d(x_test)
             x_test = np.concatenate([x_test, c_test], axis=-1)
             test_data_X.append(x_test)
             test_data_y.append(y_test)

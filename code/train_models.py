@@ -9,13 +9,14 @@ from seedpy import fixedseed
 from config import DATASET_HYPERPARAMETERS, DEEPAR_HYPERPARAMETERS, FCN_HYPERPARAMETERS
 from os import makedirs
 from tsx.utils import string_to_randomstate
-from models import DeepAR, FCNN, GlobalTorchDataset
+from models import DeepAR, DeepVAR, FCNN, GlobalTorchDataset
 
 def fit_fcnn(ds_name):
     random_state = string_to_randomstate(ds_name, return_seed=True)
     dsh = DATASET_HYPERPARAMETERS[ds_name]
     L = dsh['L']
     freq = dsh['freq']
+    n_channels = dsh.get('n_channels', 1)
 
     ds_train = GlobalTorchDataset(ds_name, freq, L, 1, split='train', return_X_y=True)
 
@@ -29,7 +30,7 @@ def fit_fcnn(ds_name):
     makedirs(f'models/{ds_name}/', exist_ok=True)
     
     with fixedseed([torch, np], seed=random_state):
-        mlp = FCNN(L, **FCN_HYPERPARAMETERS[ds_name])
+        mlp = FCNN(L, n_channels=n_channels, **FCN_HYPERPARAMETERS[ds_name])
         mlp.fit(ds_train, ds_val, verbose=True)
 
     with open(f'models/{ds_name}/fcnn.pickle', 'wb') as _f:
@@ -39,7 +40,9 @@ def fit_fcnn(ds_name):
 
     losses = []
     for _X_test, _y_test in zip(X_test, y_test):
-        _X_test = _X_test.reshape(_X_test.shape[0], -1).astype(np.float32)
+        batch_size = _X_test.shape[0]
+        _X_test = _X_test.reshape(batch_size, -1).astype(np.float32)
+        _y_test = _y_test.reshape(batch_size, -1)
         test_preds = mlp.predict(_X_test).reshape(_y_test.shape)
         loss = rmse(test_preds, _y_test)
         losses.append(loss)
@@ -50,6 +53,7 @@ def fit_deepar(ds_name):
     dsh = DATASET_HYPERPARAMETERS[ds_name]
     L = dsh['L']
     freq = dsh['freq']
+    n_channels = dsh.get('n_channels', 1)
 
     ds_train = GlobalTorchDataset(ds_name, freq, L, 1, split='train', return_X_y=False)
 
@@ -63,7 +67,10 @@ def fit_deepar(ds_name):
     makedirs(f'models/{ds_name}/', exist_ok=True)
 
     with fixedseed([np, torch], seed=random_state):
-        DAR = DeepAR(n_channel=4, **DEEPAR_HYPERPARAMETERS[ds_name])
+        if n_channels == 1:
+            DAR = DeepAR(n_channel=4, **DEEPAR_HYPERPARAMETERS[ds_name])
+        else:
+            DAR = DeepVAR(random_state=random_state, **DEEPAR_HYPERPARAMETERS[ds_name])
         DAR.fit(ds_train, ds_val, verbose=True)
 
     with open(f'models/{ds_name}/deepar.pickle', 'wb') as _f:
@@ -73,6 +80,8 @@ def fit_deepar(ds_name):
 
     losses = []
     for _X_test, _y_test in zip(X_test, y_test):
+        n_channels = _X_test.shape[-1]-3 if len(_X_test.shape) == 3 else 1
+        _y_test = _y_test.reshape(-1, n_channels)
         test_preds = DAR.predict(_X_test.astype(np.float32)).reshape(_y_test.shape)
         loss = rmse(test_preds, _y_test)
         losses.append(loss)
@@ -84,12 +93,14 @@ def main():
     # fit_deepar('australian_electricity_demand')
     # fit_deepar('pedestrian_counts')
     # fit_deepar('kdd_cup_nomissing')
+    fit_deepar('electricity_hourly')
 
     # fit_fcnn('weather')
     # fit_fcnn('nn5_daily_nomissing')
     # fit_fcnn('australian_electricity_demand')
     # fit_fcnn('pedestrian_counts')
     # fit_fcnn('kdd_cup_nomissing')
+    # fit_fcnn('electricity_hourly')
 
 if __name__ == '__main__':
     main()

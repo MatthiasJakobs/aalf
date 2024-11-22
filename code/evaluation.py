@@ -13,6 +13,7 @@ from os.path import exists
 from critdd import Diagrams
 from config import ALL_DATASETS, DS_MAP, MODEL_MAP, LOSS_MAP
 from itertools import product
+from models import MultivariateLinearModel
 
 
 class CPU_Unpickler(pickle.Unpickler):
@@ -37,13 +38,13 @@ def evaluate_models(ds_name, verbose=False):
     for m_name in model_names:
         if m_name == 'linear':
             for ds_index in range(len(local_X_train)):
-                m = LinearRegression()
+                m = MultivariateLinearModel()
                 m.fit(local_X_train[ds_index], local_y_train[ds_index])
                 test_preds = m.predict(local_X_test[ds_index]).reshape(local_y_test[ds_index].shape)
                 all_predictions[m_name].append(test_preds.squeeze())
                 all_predictions['y'].append(local_y_test[ds_index].squeeze())
                 for loss_fn in loss_fn_names:
-                    loss = eval(loss_fn)(test_preds, local_y_test[ds_index])
+                    loss = eval(loss_fn)(test_preds.squeeze(), local_y_test[ds_index].squeeze())
                     all_loss_values[f'linear_{loss_fn}'].append(loss)
             continue
         elif m_name == 'deepar':
@@ -67,10 +68,11 @@ def evaluate_models(ds_name, verbose=False):
         for X_test, y_test in zip(global_X_test, global_y_test):
             if m_name == 'fcnn':
                 X_test = X_test.reshape(X_test.shape[0], -1)
+                y_test = y_test.reshape(y_test.shape[0], -1)
             test_preds = m.predict(X_test).reshape(y_test.shape)
             all_predictions[m_name].append(test_preds.squeeze())
             for loss_fn in loss_fn_names:
-                loss = eval(loss_fn)(test_preds, y_test)
+                loss = eval(loss_fn)(test_preds.squeeze(), y_test.squeeze())
                 all_loss_values[f'{m_name}_{loss_fn}'].append(loss)
 
     makedirs('preds', exist_ok=True)
@@ -141,7 +143,7 @@ def generate_latex_table():
 
 def main():
     # generate_cdd_plot(loss_fn='rmse')
-    for ds_name in ['wind_farms_nomissing']:
+    for ds_name in ['electricity_hourly']:
         evaluate_models(ds_name, verbose=True)
     #generate_latex_table()
 

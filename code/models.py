@@ -5,6 +5,7 @@ import torch.nn as nn
 from tsx.utils import get_device, EarlyStopping
 from preprocessing import _load_data, generate_covariates
 from multiprocessing import cpu_count
+from sklearn.linear_model import LinearRegression
 
 class UpsampleEnsembleClassifier:
 
@@ -85,7 +86,10 @@ class GlobalTorchDataset(torch.utils.data.Dataset):
             remainder = index - self.cum_length[ds_index-1]
 
         # win_i : [i:L+H+i]
-        X_window = X[remainder:(remainder+self.L+self.H)].reshape(-1, 1)
+        X_window = X[remainder:(remainder+self.L+self.H)]#.reshape(-1, 1)
+        X_window = torch.atleast_2d(X_window)
+        if X_window.shape[0] == 1:
+            X_window = X_window.permute(1, 0)
         cov_window = covs[remainder:(remainder+self.L+self.H)]
 
         if self.return_X_y:
@@ -95,7 +99,8 @@ class GlobalTorchDataset(torch.utils.data.Dataset):
 
             return x, y
         else:
-            return torch.cat([X_window, cov_window], axis=-1)
+            #return torch.cat([X_window, cov_window], axis=-1)
+            return X_window, cov_window
     
 
 class TorchBase(nn.Module):
@@ -205,8 +210,11 @@ class DeepAR(TorchBase):
         self.train()
         epoch_loss = 0
         n = 0
-        for b_x in tqdm.tqdm(dl, desc=f'epoch {e} train', total=n_batches_per_epoch, disable=not self.show_progress):
+        for b_x, b_c in tqdm.tqdm(dl, desc=f'epoch {e} train', total=n_batches_per_epoch, disable=not self.show_progress):
             self.optimizer.zero_grad()
+
+            # Add data and covariates
+            b_x = torch.cat([b_x, b_c], axis=-1)
             b_x = b_x.to(self.device)
 
             h0, c0 = self.initialize_hidden(b_x.shape[0])
@@ -234,7 +242,8 @@ class DeepAR(TorchBase):
     def evaluate(self, e, dl):
         self.eval()
         squared_errors = 0
-        for b_x in tqdm.tqdm(dl, desc=f'epoch {e} evaluate', total=len(dl), disable=not self.show_progress):
+        for b_x, b_c in tqdm.tqdm(dl, desc=f'epoch {e} evaluate', total=len(dl), disable=not self.show_progress):
+            b_x = torch.cat([b_x, b_c], axis=-1)
             b_x = b_x.to(self.device)
 
             batch_size = b_x.shape[0]
@@ -249,16 +258,151 @@ class DeepAR(TorchBase):
 
         return np.sqrt(squared_errors.cpu().numpy() / len(dl.dataset))
 
+class DeepVAR(TorchBase):
+    def __init__(self, n_channel=1, hidden_size=50, rank=10, num_layers=2, dropout=0.1, random_state=None, **kwargs):
+        super().__init__(**kwargs)
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.rank = rank
+        self.lstm = nn.LSTM(n_channel, hidden_size, num_layers, batch_first=True, dropout=dropout).to(self.device)
+
+        self.mu_estimator = nn.Linear(3 + hidden_size*num_layers, 1).to(self.device)
+        self.d_estimator = nn.Linear(3 + hidden_size*num_layers, 1).to(self.device)
+        self.v_estimator = nn.Linear(3 + hidden_size*num_layers, rank).to(self.device)
+
+        self.rng = np.random.RandomState(random_state)
+
+        # initialize LSTM forget gate bias to be 1 as recommanded by http://proceedings.mlr.press/v37/jozefowicz15.pdf
+        for names in self.lstm._all_weights:
+            for name in filter(lambda n: 'bias' in n, names):
+                bias = getattr(self.lstm, name)
+                n = bias.size(0)
+                start, end = n // 4, n // 2
+                bias.data[start:end].fill_(1.)
+
+    def initialize_hidden(self, batch_size):
+        h0 = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(self.device)
+        c0 = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(self.device)
+        return h0, c0
+
+    def forward(self, x, cov, h0, c0):
+
+        batch_size = x.shape[0]
+        channel = x.shape[-1]
+
+        mus = torch.zeros((batch_size, channel)).to(self.device)
+        ds = torch.zeros((batch_size, channel)).to(self.device)
+        vs = torch.zeros((batch_size, channel, self.rank)).to(self.device)
+
+        for c in range(channel):
+            _x = torch.atleast_3d(x[..., c])
+            h_c_t, (_, _) = self.lstm(_x, (h0, c0))
+            h_c_t = h_c_t.reshape(batch_size, -1)
+
+            # Add covariates to embedding
+            y_c_t = torch.cat([h_c_t, cov.reshape(-1, 3)], axis=-1)
+
+            mu = self.mu_estimator(y_c_t).squeeze()
+            d = torch.log(1 + torch.exp(self.d_estimator(y_c_t))).squeeze()
+            v = self.v_estimator(y_c_t).squeeze()
+
+            mus[:, c] = mu
+            ds[:, c] = d
+            vs[:, c] = v
+
+        return mus, ds, vs, h0, c0
+
+    @torch.no_grad()
+    def predict(self, x):
+        self.eval()
+        x = torch.from_numpy(x).float().to(self.device)
+        batch_size = x.shape[0]
+        input_size = x.shape[1]
+        if len(x.shape) == 2:
+            x = x.unsqueeze(-1)
+
+        # Last three channels are covariates
+        covariates = x[..., -3:]
+        x = x[..., :-3]
+
+        # First, we get h0 and c0
+        h0, c0 = self.initialize_hidden(batch_size)
+        for t in range(input_size-1):
+            _, _, _, h0, c0 = self(x[:, t].unsqueeze(1), covariates[:, t].unsqueeze(1), h0, c0)
+
+        mu, _, _, _, _ = self(x[:, -1].unsqueeze(1), covariates[:, t].unsqueeze(1), h0, c0)
+        return mu.cpu().numpy()
+
+    def train_epoch(self, e, dl, n_batches_per_epoch):
+        self.train()
+        epoch_loss = 0
+        n = 0
+        for b_x, b_c in tqdm.tqdm(dl, desc=f'epoch {e} train', total=n_batches_per_epoch, disable=not self.show_progress):
+            self.optimizer.zero_grad()
+
+            batch_size = b_x.shape[0]
+            L = b_x.shape[1]
+            n_channel = b_x.shape[2]
+
+            # Subsample channels for each batch according to paper
+            channel_indices = torch.from_numpy(self.rng.choice(n_channel, size=min(20, n_channel), replace=False)).long()
+            n_channel = len(channel_indices)
+            b_x = b_x[..., channel_indices]
+
+            b_x = b_x.to(self.device)
+            b_c = b_c.to(self.device)
+
+            h0, c0 = self.initialize_hidden(batch_size)
+            loss = 0
+
+            for t in range(L-1):
+                mu, diagonal, rank, h0, c0 = self(b_x[:, t].unsqueeze(1).clone(), b_c[:, t].unsqueeze(1).clone(), h0, c0)
+                # Build covariance matrix
+                cov = torch.diag_embed(diagonal) + torch.matmul(rank, rank.permute(0, 2, 1))
+                ll = torch.distributions.MultivariateNormal(mu, cov).log_prob(b_x[:, t+1]).mean()
+                loss += ll
+            
+            loss = -loss
+            loss.backward()
+            self.optimizer.step()
+            epoch_loss += loss.item() / L
+
+            if n >= n_batches_per_epoch:
+                break
+            n += 1
+
+        return epoch_loss / n_batches_per_epoch
+    
+    @torch.no_grad()
+    def evaluate(self, e, dl):
+        self.eval()
+        squared_errors = 0
+        for b_x, b_c in tqdm.tqdm(dl, desc=f'epoch {e} evaluate', total=len(dl), disable=not self.show_progress):
+            b_x = b_x.to(self.device)
+            b_c = b_c.to(self.device)
+
+            batch_size = b_x.shape[0]
+            L = b_x.shape[1]
+
+            # First, we get h0 and c0
+            h0, c0 = self.initialize_hidden(batch_size)
+            for t in range(L-1):
+                mu, _, _, h0, c0 = self(b_x[:, t].unsqueeze(1), b_c[:, t].unsqueeze(1), h0, c0)
+
+            squared_errors += ((mu-b_x[:, -1])**2).sum()
+
+        return np.sqrt(squared_errors.cpu().numpy() / len(dl.dataset))
+
 class FCNN(TorchBase):
 
-    def __init__(self, L, hidden_size=20, **kwargs):
+    def __init__(self, L, n_channels=1, hidden_size=20, **kwargs):
         super().__init__(**kwargs)
         self.model = nn.Sequential(
-            nn.Linear(L * 4, hidden_size),
+            nn.Linear(L * (n_channels + 3), hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
-            nn.Linear(hidden_size, 1)
+            nn.Linear(hidden_size, n_channels)
         ).to(self.device)
 
     def train_epoch(self, e, dl, n_batches_per_epoch):
@@ -311,7 +455,37 @@ class FCNN(TorchBase):
         if not isinstance(X, torch.Tensor):
             X = torch.tensor(X, dtype=torch.float32).to(self.device)
         
-        predictions = self.model(X)
+        predictions = self.model(X).squeeze()
         
         # Convert output to numpy for consistency with scikit-learn's output format
         return predictions.cpu().numpy()
+
+class MultivariateLinearModel:
+
+    def __init__(self):
+        self.models = []
+    
+    def fit(self, X, y):
+        X = np.atleast_3d(X)
+        y = np.atleast_2d(y)
+        if y.shape[0] == 1:
+            y = y.T
+
+        n_channel = X.shape[2]
+        for c_idx in range(n_channel):
+            _x, _y = X[..., c_idx], y[..., c_idx]
+            m = LinearRegression()
+            m.fit(_x, _y)
+            self.models.append(m)
+
+    def predict(self, X):
+        X = np.atleast_3d(X)
+        batch_size = X.shape[0]
+        n_channel = X.shape[2]
+        output = np.zeros((batch_size, n_channel))
+        for c_idx in range(n_channel):
+            _x = X[..., c_idx]
+            preds = self.models[c_idx].predict(_x)
+            output[:, c_idx] = preds.squeeze()
+
+        return output
