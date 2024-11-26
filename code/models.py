@@ -590,33 +590,3 @@ class FCNN(TorchBase):
         
         # Convert output to numpy for consistency with scikit-learn's output format
         return predictions.cpu().numpy()
-
-class MultivariateLinearModel:
-
-    def __init__(self):
-        self.models = []
-    
-    def fit(self, X, y):
-        X = np.atleast_3d(X)
-        y = np.atleast_2d(y)
-        if y.shape[0] == 1:
-            y = y.T
-
-        n_channel = X.shape[2]
-        for c_idx in range(n_channel):
-            _x, _y = X[..., c_idx], y[..., c_idx]
-            m = LinearRegression()
-            m.fit(_x, _y)
-            self.models.append(m)
-
-    def predict(self, X):
-        X = np.atleast_3d(X)
-        batch_size = X.shape[0]
-        n_channel = X.shape[2]
-        output = np.zeros((batch_size, n_channel))
-        for c_idx in range(n_channel):
-            _x = X[..., c_idx]
-            preds = self.models[c_idx].predict(_x)
-            output[:, c_idx] = preds.squeeze()
-
-        return output

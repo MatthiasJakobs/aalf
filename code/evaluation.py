@@ -13,8 +13,6 @@ from os.path import exists
 from critdd import Diagrams
 from config import ALL_DATASETS, DS_MAP, MODEL_MAP, LOSS_MAP
 from itertools import product
-from models import MultivariateLinearModel
-
 
 class CPU_Unpickler(pickle.Unpickler):
     def find_class(self, module, name):
@@ -40,7 +38,7 @@ def evaluate_models(ds_name, verbose=False):
     for m_name in model_names:
         if m_name == 'linear':
             for ds_index in range(len(local_X_train)):
-                m = MultivariateLinearModel()
+                m = LinearRegression()
                 m.fit(local_X_train[ds_index], local_y_train[ds_index])
 
                 train_preds = m.predict(local_X_train[ds_index]).reshape(local_y_train[ds_index].shape)
@@ -168,8 +166,8 @@ def generate_latex_table():
     print(pd.concat(dfs))
 
 def main():
-    # generate_cdd_plot(loss_fn='rmse')
-    for ds_name in ['solar_10_minutes']:
+    #generate_cdd_plot(loss_fn='rmse')
+    for ds_name in ['nn5_weekly']:
         evaluate_models(ds_name, verbose=True)
     #generate_latex_table()
 
