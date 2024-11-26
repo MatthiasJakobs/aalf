@@ -13,7 +13,7 @@ DEEPAR_HYPERPARAMETERS = {
     'nn5_daily_nomissing': {'num_layers': 1, 'hidden_size': 25, 'max_epochs':100, 'limit_train_batches': None, 'batch_size': 256, 'dropout': 0 },
     'nn5_weekly': {'num_layers': 1, 'hidden_size': 25, 'max_epochs':100, 'limit_train_batches': None, 'batch_size': 256, 'dropout': 0 },
     'pedestrian_counts': {'num_layers': 1, 'hidden_size': 100, 'max_epochs':200, 'limit_train_batches': None, 'batch_size': 256, 'dropout': 0 },
-    'kdd_cup_nomissing': {'num_layers': 1, 'hidden_size': 25, 'max_epochs':100, 'limit_train_batches': None, 'batch_size': 256, 'dropout': 0},
+    'kdd_cup_nomissing': {'num_layers': 1, 'hidden_size': 25, 'max_epochs':100, 'limit_train_batches': None, 'batch_size': 64, 'dropout': 0},
 }
 
 FCN_HYPERPARAMETERS = {
@@ -22,7 +22,7 @@ FCN_HYPERPARAMETERS = {
     'nn5_weekly': {'hidden_size': 64, 'max_epochs': 200, 'learning_rate': 6e-4, 'batch_size': 256, 'limit_train_batches': None},
     'weather': {'hidden_size': 64, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': 10_000},
     'pedestrian_counts': {'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
-    'kdd_cup_nomissing': {'hidden_size': 64, 'max_epochs': 100, 'learning_rate': 6e-4, 'batch_size': 64, 'limit_train_batches': None},
+    'kdd_cup_nomissing': {'max_epochs': 20, 'learning_rate': 6e-4, 'batch_size': 64, 'limit_train_batches': None},
 }
 
 ALL_DATASETS = ['australian_electricity_demand', 'nn5_daily_nomissing', 'nn5_weekly', 'weather', 'pedestrian_counts', 'kdd_cup_nomissing']
