@@ -5,14 +5,14 @@ import matplotlib.pyplot as plt
 from selection import Oracle
 from utils import rmse
 from plotz import default_plot, COLORS
-from config import DS_MAP
+from config import DS_MAP, ALL_DATASETS
 
 def plot_oracle_line(ax, ys, fint_preds, fcomp_preds, loss_fn=None, color=COLORS.blue, label=''):
 
     if loss_fn is None:
         loss_fn = rmse
 
-    ps = np.linspace(0.001, 0.999, num=100)
+    ps = np.linspace(0.001, 0.999, num=2)
     oracle_losses = []
     for p in ps:
         oracle = Oracle(p)
@@ -35,9 +35,9 @@ def plot_oracle_line(ax, ys, fint_preds, fcomp_preds, loss_fn=None, color=COLORS
 
 def main():
     #fig, axs = plt.subplots(2,2, layout='constrained')
-    fig, axs = default_plot(subplots=(2,2), height_fraction=1.3)
+    fig, axs = default_plot(subplots=(3,2), height_fraction=1.3)
     axs = axs.ravel()
-    ds_names = ['australian_electricity_demand', 'nn5_daily_nomissing', 'pedestrian_counts', 'weather']
+    ds_names = ALL_DATASETS
     for idx, ds_name in enumerate(ds_names):
         with open(f'preds/{ds_name}.pickle', 'rb') as f:
             preds = pickle.load(f)
@@ -51,8 +51,8 @@ def main():
         axs[idx].scatter(0, losses['deepar'], color=COLORS.red, marker='x', s=20, label='DeepAR' if idx == 0 else '')
         axs[idx].scatter(1, losses['linear'], color=COLORS.blue, marker='x', s=20, label='Linear' if idx == 0 else '')
 
-        axs[idx] = plot_oracle_line(axs[idx], ys=preds['y'], fint_preds=preds['linear'], fcomp_preds=preds['fcnn'], color=COLORS.green, label='Oracle FCNN-LIN' if idx == 0 else '')
-        axs[idx] = plot_oracle_line(axs[idx], ys=preds['y'], fint_preds=preds['linear'], fcomp_preds=preds['deepar'], color=COLORS.red, label='Oracle Deepar-LIN' if idx == 0 else '')
+        axs[idx] = plot_oracle_line(axs[idx], ys=preds['test']['y'], fint_preds=preds['test']['linear'], fcomp_preds=preds['test']['fcnn'], color=COLORS.green, label='Oracle FCNN-LIN' if idx == 0 else '')
+        axs[idx] = plot_oracle_line(axs[idx], ys=preds['test']['y'], fint_preds=preds['test']['linear'], fcomp_preds=preds['test']['deepar'], color=COLORS.red, label='Oracle Deepar-LIN' if idx == 0 else '')
         axs[idx].set_title(DS_MAP[ds_name])
 
     fig.legend(ncols=5, loc='center', bbox_to_anchor=(0.5, -0.01))

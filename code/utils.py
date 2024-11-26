@@ -1,6 +1,8 @@
+import pickle
 import numpy as np
 from sklearn.metrics import mean_squared_error, root_mean_squared_error, mean_absolute_error
 from sktime.performance_metrics.forecasting import MeanAbsolutePercentageError
+from os.path import exists
 
 def mae(a, b):
     return mean_absolute_error(a, b)
@@ -16,3 +18,10 @@ def rmse(a, b):
 
 def smape(y_true, y_pred):
     return MeanAbsolutePercentageError(symmetric=True)(y_true, y_pred)
+
+def load_dict_or_create(path):
+    if not exists(path):
+        return {}
+    else:
+        with open(path, 'rb') as f:
+            return pickle.load(f)

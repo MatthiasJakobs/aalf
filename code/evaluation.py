@@ -29,20 +29,31 @@ def evaluate_models(ds_name, verbose=False):
     loss_fn_names = ['rmse', 'smape']
     model_names = ['linear', 'fcnn', 'deepar']
 
-    (local_X_train, local_y_train), (_, _), (local_X_test, local_y_test) = load_local_data(ds_name, L=L, H=1, return_split=['train', 'test'], verbose=verbose)
-    (_, _), (_, _), (global_X_test, global_y_test) = load_global_data(ds_name, L=L, H=1, freq=freq, return_split=['test'], verbose=verbose)
+    (local_X_train, local_y_train), (local_X_val, local_y_val), (local_X_test, local_y_test) = load_local_data(ds_name, L=L, H=1, return_split=['train', 'val', 'test'], verbose=verbose)
+    (global_X_train, global_y_train), (global_X_val, global_y_val), (global_X_test, global_y_test) = load_global_data(ds_name, L=L, H=1, freq=freq, return_split=['train', 'val', 'test'], verbose=verbose)
 
     all_loss_values = {f'{m_name}_{loss_name}': [] for m_name, loss_name in product(model_names, loss_fn_names)}
-    all_predictions = {m_name: [] for m_name in model_names + ['y']}
+    all_train_predictions = {m_name: [] for m_name in model_names + ['y']}
+    all_val_predictions = {m_name: [] for m_name in model_names + ['y']}
+    all_test_predictions = {m_name: [] for m_name in model_names + ['y']}
 
     for m_name in model_names:
         if m_name == 'linear':
             for ds_index in range(len(local_X_train)):
                 m = MultivariateLinearModel()
                 m.fit(local_X_train[ds_index], local_y_train[ds_index])
+
+                train_preds = m.predict(local_X_train[ds_index]).reshape(local_y_train[ds_index].shape)
+                val_preds = m.predict(local_X_val[ds_index]).reshape(local_y_val[ds_index].shape)
                 test_preds = m.predict(local_X_test[ds_index]).reshape(local_y_test[ds_index].shape)
-                all_predictions[m_name].append(test_preds.squeeze())
-                all_predictions['y'].append(local_y_test[ds_index].squeeze())
+
+                all_train_predictions[m_name].append(train_preds.squeeze())
+                all_train_predictions['y'].append(local_y_train[ds_index].squeeze())
+                all_val_predictions[m_name].append(val_preds.squeeze())
+                all_val_predictions['y'].append(local_y_val[ds_index].squeeze())
+                all_test_predictions[m_name].append(test_preds.squeeze())
+                all_test_predictions['y'].append(local_y_test[ds_index].squeeze())
+
                 for loss_fn in loss_fn_names:
                     loss = eval(loss_fn)(test_preds.squeeze(), local_y_test[ds_index].squeeze())
                     all_loss_values[f'linear_{loss_fn}'].append(loss)
@@ -65,17 +76,32 @@ def evaluate_models(ds_name, verbose=False):
                 continue
         else:
             raise NotImplementedError('Unknown model', m_name)
-        for X_test, y_test in zip(global_X_test, global_y_test):
+        for X_train, y_train, X_val, y_val, X_test, y_test in zip(global_X_train, global_y_train, global_X_val, global_y_val, global_X_test, global_y_test):
             if m_name == 'fcnn':
+                X_train = X_train.reshape(X_train.shape[0], -1)
+                y_train = y_train.reshape(y_train.shape[0], -1)
+                X_val = X_val.reshape(X_val.shape[0], -1)
+                y_val = y_val.reshape(y_val.shape[0], -1)
                 X_test = X_test.reshape(X_test.shape[0], -1)
                 y_test = y_test.reshape(y_test.shape[0], -1)
+
+            train_preds = m.predict(X_train).reshape(y_train.shape)
+            val_preds = m.predict(X_val).reshape(y_val.shape)
             test_preds = m.predict(X_test).reshape(y_test.shape)
-            all_predictions[m_name].append(test_preds.squeeze())
+            all_train_predictions[m_name].append(train_preds.squeeze())
+            all_val_predictions[m_name].append(val_preds.squeeze())
+            all_test_predictions[m_name].append(test_preds.squeeze())
+
             for loss_fn in loss_fn_names:
                 loss = eval(loss_fn)(test_preds.squeeze(), y_test.squeeze())
                 all_loss_values[f'{m_name}_{loss_fn}'].append(loss)
 
     makedirs('preds', exist_ok=True)
+    all_predictions = {
+        'train': all_train_predictions,
+        'val': all_val_predictions,
+        'test': all_test_predictions,
+    }
     with open(f'preds/{ds_name}.pickle', 'wb') as f:
         pickle.dump(all_predictions, f)
 

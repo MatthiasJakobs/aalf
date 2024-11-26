@@ -28,6 +28,7 @@ def generate_covariates(length, freq, start_date=None):
 def _load_data(ds_name, return_start_dates=False):
     ds = load_monash(ds_name)
     Xs = [x.to_numpy() for x in ds['series_value']]
+    indices = range(len(Xs))
 
     if 'start_timestamp' in ds.keys():
         start_dates = ds['start_timestamp'].tolist()
@@ -40,8 +41,6 @@ def _load_data(ds_name, return_start_dates=False):
         Xs = np.stack(Xs).T[None, ...]
         indices = [0]
         start_dates = [start_dates[0]]
-    else:
-        indices = range(len(Xs))
 
     X_train = []
     X_val = []
@@ -154,9 +153,9 @@ def load_global_data(ds_name, L, H, freq, return_split=None, verbose=True):
             test_data_X.append(x_test)
             test_data_y.append(y_test)
 
-    if 'train' in return_split:
-        train_data_X = np.concatenate(train_data_X)
-        train_data_y = np.concatenate(train_data_y)
+    # if 'train' in return_split:
+    #     train_data_X = np.concatenate(train_data_X)
+    #     train_data_y = np.concatenate(train_data_y)
 
     return (train_data_X, train_data_y), (val_data_X, val_data_y), (test_data_X, test_data_y)
 
