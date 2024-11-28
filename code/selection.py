@@ -12,48 +12,39 @@ from sklearn.metrics import confusion_matrix
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from os import makedirs
-from models import RandomSelector, UpsampleEnsembleClassifier, BalancedEnsembleClassifier
+from models import RandomSelector, UpsampleEnsembleClassifier
+from tsx.utils import string_to_randomstate
 
 SELECTORS = {
     'random_selector': {
         'model_class': RandomSelector,
         'hyperparameters': {},
-        'n_repeats': 5,
+        'n_repeats': 100,
+        'randomized': True,
     },
     'logistic_regression': {
         'model_class': LogisticRegression,
         'hyperparameters': {},
-        'n_repeats': 1,
-    },
-    'random_forest_64': {
-        'model_class': RandomForestClassifier,
-        'hyperparameters': {'n_estimators': 64},
-        'n_repeats': 5,
     },
     'random_forest_128': {
         'model_class': RandomForestClassifier,
-        'hyperparameters': {'n_estimators': 128},
-        'n_repeats': 5,
+        'hyperparameters': {'n_estimators': 128, 'random_state': 20241127},
+        'randomized': True,
     },
     'upsample_logistic_regression': {
         'model_class': UpsampleEnsembleClassifier,
-        'hyperparameters': {'model_class': LogisticRegression, 'n_member': 64},
-        'n_repeats': 5,
+        'hyperparameters': {'model_class': LogisticRegression, 'n_member': 64, 'random_state': 20241127},
+        'randomized': True,
     },
     'upsample_tree': {
         'model_class': UpsampleEnsembleClassifier,
-        'hyperparameters': {'model_class': DecisionTreeClassifier, 'n_member': 128},
-        'n_repeats': 5,
+        'hyperparameters': {'model_class': DecisionTreeClassifier, 'n_member': 128, 'random_state': 20241127},
+        'randomized': True,
     },
     'upsample_forest': {
         'model_class': UpsampleEnsembleClassifier,
-        'hyperparameters': {'model_class': RandomForestClassifier, 'n_member': 9, 'n_estimators': 128},
-        'n_repeats': 5,
-    },
-    'balanced_tree': {
-        'model_class': BalancedEnsembleClassifier,
-        'hyperparameters': {'model_class': RandomForestClassifier, 'n_member': 3, 'n_estimators': 128, 'n_jobs': -1},
-        'n_repeats': 5,
+        'hyperparameters': {'model_class': RandomForestClassifier, 'n_member': 9, 'n_estimators': 128, 'random_state': 20241127},
+        'randomized': True,
     },
 }
 
@@ -72,28 +63,28 @@ class Oracle:
             raise RuntimeError('Shape mismatch:', a.shape, b.shape, c.shape)
 
     # Return 0 if preds_a is better and 1 if preds_b is better
-    def get_labels(self, y_true, preds_a, preds_b):
-        preds_a = preds_a.squeeze()
-        preds_b = preds_b.squeeze()
+    def get_labels(self, y_true, preds_fcomp, preds_fint):
+        preds_fcomp = preds_fcomp.squeeze()
+        preds_fint = preds_fint.squeeze()
         y_true = y_true.squeeze()
 
-        self.check_shapes(preds_a, preds_b, y_true)
+        self.check_shapes(preds_fcomp, preds_fint, y_true)
 
-        errors_a = (preds_a - y_true)**2
-        errors_b = (preds_b - y_true)**2
+        errors_fcomp = (preds_fcomp - y_true)**2
+        errors_fint = (preds_fint - y_true)**2
 
         # Positive if b is better than a
-        errors = (errors_a-errors_b)
+        errors = (errors_fint-errors_fcomp)
 
         # How many to take at least
         B0 = int(np.ceil(self.p * len(errors)))
         # How many to take at max
-        Bmax = (errors > -self.threshold).sum()
+        Bmax = (errors < self.threshold).sum()
 
         B = max(Bmax, B0)
 
         label = np.zeros((len(errors)))
-        label[np.argsort(-errors)[:B]] = 1
+        label[np.argsort(errors)[:B]] = 1
 
         return label.astype(np.int8)
 
@@ -118,8 +109,10 @@ def compute_selector(ds_name, fint_name, fcomp_name, sel_name, ps):
     # Train local selectors
     model_class = SELECTORS[sel_name]['model_class']
     hyperparameters = SELECTORS[sel_name]['hyperparameters']
-    n_repeats = SELECTORS[sel_name]['n_repeats']
+    n_repeats = SELECTORS[sel_name].get('n_repeats', 1)
     n_datapoints  = len(local_X_val)
+    if 'randomized' in SELECTORS[sel_name].keys():
+        hyperparameters['random_state'] = string_to_randomstate(f'{ds_name}_{sel_name}', return_seed=True)
     
     for p in tqdm.tqdm(ps, desc=f'[{ds_name} - {sel_name}]'):
         tn, fp, fn, tp = 0, 0, 0, 0
@@ -163,8 +156,8 @@ def compute_selector(ds_name, fint_name, fcomp_name, sel_name, ps):
             test_last_errors = get_last_errors(fint_val_preds, fcomp_val_preds, y_val, fint_test_preds, fcomp_test_preds, y_test).reshape(-1, 1)
             X_test = np.concatenate([X_test, test_prediction_difference, test_aggregated_windows, test_last_errors], axis=-1)
 
+            model = model_class(**hyperparameters)
             for _ in range(n_repeats):
-                model = model_class(**hyperparameters)
                 model.fit(X_val, s_star_val)
                 selector_preds = model.predict(X_test).squeeze()
 
@@ -213,14 +206,12 @@ def main():
     ds_name = 'nn5_daily_nomissing'
     fint_name = 'linear'
     fcomp_name = 'fcnn'
-    # compute_selector(ds_name, fint_name, fcomp_name, 'logistic_regression', ps)
-    # compute_selector(ds_name, fint_name, fcomp_name, 'random_forest_64', ps)
-    # compute_selector(ds_name, fint_name, fcomp_name, 'random_forest_128', ps)
-    # compute_selector(ds_name, fint_name, fcomp_name, 'random_selector', ps)
-    # compute_selector(ds_name, fint_name, fcomp_name, 'upsample_logistic_regression', ps)
-    # compute_selector(ds_name, fint_name, fcomp_name, 'upsample_tree', ps)
-    # compute_selector(ds_name, fint_name, fcomp_name, 'upsample_forest', ps)
-    compute_selector(ds_name, fint_name, fcomp_name, 'balanced_tree', ps)
+    compute_selector(ds_name, fint_name, fcomp_name, 'logistic_regression', ps)
+    compute_selector(ds_name, fint_name, fcomp_name, 'random_forest_128', ps)
+    compute_selector(ds_name, fint_name, fcomp_name, 'random_selector', ps)
+    compute_selector(ds_name, fint_name, fcomp_name, 'upsample_logistic_regression', ps)
+    compute_selector(ds_name, fint_name, fcomp_name, 'upsample_tree', ps)
+    compute_selector(ds_name, fint_name, fcomp_name, 'upsample_forest', ps)
     
     # Put results in table
     compute_selection_accuracy(ds_name, ps)

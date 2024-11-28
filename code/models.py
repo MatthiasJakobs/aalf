@@ -13,121 +13,6 @@ from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from collections import Counter
 from scipy.stats import mode
 
-class BalancedEnsembleClassifier(BaseEstimator, ClassifierMixin):
-    def __init__(self, model_class, n_member=5, **kwargs):
-        """
-        Initialize the BalancedEnsembleClassifier.
-
-        Parameters:
-        - base_estimator: sklearn classifier (base model to replicate in the ensemble).
-        - n_estimators: int, total number of estimators in the ensemble (must be odd and >= 3).
-        """
-        self.base_estimators = [model_class(**kwargs) for _ in range(n_member)]
-        self.n_member = n_member
-
-    def _resample_data(self, X, y, strategy):
-        """Helper method to resample the dataset based on the specified strategy."""
-        class_counts = Counter(y)
-        majority_class = max(class_counts, key=class_counts.get)
-        minority_class = min(class_counts, key=class_counts.get)
-        
-        if strategy == 'upsample':
-            X_minority = X[y == minority_class]
-            y_minority = y[y == minority_class]
-            X_upsampled, y_upsampled = resample(
-                X_minority, y_minority, replace=True,
-                n_samples=class_counts[majority_class]
-            )
-            X_resampled = np.vstack([X, X_upsampled])
-            y_resampled = np.hstack([y, y_upsampled])
-        elif strategy == 'downsample':
-            X_majority = X[y == majority_class]
-            y_majority = y[y == majority_class]
-            X_downsampled, y_downsampled = resample(
-                X_majority, y_majority, replace=False,
-                n_samples=class_counts[minority_class]
-            )
-            X_resampled = np.vstack([X_downsampled, X[y == minority_class]])
-            y_resampled = np.hstack([y_downsampled, y[y == minority_class]])
-        else:
-            raise ValueError("Invalid sampling strategy. Use 'upsample' or 'downsample'.")
-        return X_resampled, y_resampled
-
-    def fit(self, X, y):
-        """
-        Fit the ensemble of classifiers on the given dataset.
-
-        Parameters:
-        - X: array-like, shape (n_samples, n_features), training data.
-        - y: array-like, shape (n_samples,), target labels.
-
-        Returns:
-        - self: object, fitted instance of the classifier.
-        """
-        X, y = check_X_y(X, y)
-        self.classes_ = np.unique(y)
-        self.ensemble_ = []
-
-        # Train first classifier on original data
-        original_clf = self.base_estimators[0]
-        original_clf.fit(X, y)
-        self.ensemble_.append(original_clf)
-
-        # Train remaining classifiers with upsampling and downsampling
-        n_half = (self.n_member - 1) // 2
-
-        for idx in range(n_half):
-            # Upsample the minority class
-            X_upsampled, y_upsampled = self._resample_data(X, y, strategy='upsample')
-            upsampled_clf = self.base_estimators[idx]
-            upsampled_clf.fit(X_upsampled, y_upsampled)
-            self.ensemble_.append(upsampled_clf)
-
-            # Downsample the majority class
-            X_downsampled, y_downsampled = self._resample_data(X, y, strategy='downsample')
-            downsampled_clf = self.base_estimators[idx+n_half]
-            downsampled_clf.fit(X_downsampled, y_downsampled)
-            self.ensemble_.append(downsampled_clf)
-
-        return self
-
-    def predict(self, X):
-        """
-        Predict class labels for samples in X.
-
-        Parameters:
-        - X: array-like, shape (n_samples, n_features), input data.
-
-        Returns:
-        - y_pred: array, shape (n_samples,), predicted class labels.
-        """
-        check_is_fitted(self)
-        X = check_array(X)
-
-        # Get predictions from all classifiers
-        predictions = np.array([clf.predict(X) for clf in self.ensemble_]).T
-
-        # Majority voting
-        y_pred, _ = mode(predictions, axis=1)
-        return y_pred.ravel()
-
-    def predict_proba(self, X):
-        """
-        Predict class probabilities for samples in X.
-
-        Parameters:
-        - X: array-like, shape (n_samples, n_features), input data.
-
-        Returns:
-        - y_proba: array, shape (n_samples, n_classes), predicted probabilities.
-        """
-        check_is_fitted(self)
-        X = check_array(X)
-
-        # Average probabilities across all classifiers
-        probas = np.array([clf.predict_proba(X) for clf in self.ensemble_])
-        return np.mean(probas, axis=0)
-
 class UpsampleEnsembleClassifier:
 
     def __init__(self, model_class, n_member, *args, random_state=None, **kwargs):
@@ -162,12 +47,15 @@ class UpsampleEnsembleClassifier:
 
 class RandomSelector:
 
+    def __init__(self, random_state=None):
+        self.rng = np.random.RandomState(random_state)
+
     def fit(self, X, y):
         self.p = np.mean(y)
         return self
     
     def predict(self, X):
-        return np.random.binomial(n=1, p=self.p, size=len(X))
+        return self.rng.binomial(n=1, p=self.p, size=len(X))
 
 class GlobalTorchDataset(torch.utils.data.Dataset):
 
