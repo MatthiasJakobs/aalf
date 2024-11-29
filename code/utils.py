@@ -25,3 +25,14 @@ def load_dict_or_create(path):
     else:
         with open(path, 'rb') as f:
             return pickle.load(f)
+            
+# Highlight the minimum value in each row
+def highlight_min_multicolumn(row, metric_names=None):
+    formatted_row = row.copy()
+    for metric_name in metric_names:
+        best_model = row[:, metric_name].idxmin()
+        formatted_row[best_model, metric_name] = fr'\textbf{{{row[best_model, metric_name]}}}'
+    return formatted_row
+
+def format_significant(row):
+    return row.apply(lambda x: f"{x:.3f}")

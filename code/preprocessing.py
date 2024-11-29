@@ -159,6 +159,24 @@ def load_global_data(ds_name, L, H, freq, return_split=None, verbose=True):
 
     return (train_data_X, train_data_y), (val_data_X, val_data_y), (test_data_X, test_data_y)
 
+def _get_last_errors(fint_preds_val, fcomp_preds_val, y_val, fint_preds_test, fcomp_preds_test, y_test):
+    last_preds_fint = np.concatenate([fint_preds_val[-1].reshape(-1), fint_preds_test[:-1].reshape(-1)])
+    last_preds_fcomp = np.concatenate([fcomp_preds_val[-1].reshape(-1), fcomp_preds_test[:-1].reshape(-1)])
+    y_true = np.concatenate([y_val[-1].reshape(-1), y_test[:-1].reshape(-1)])
+    return (last_preds_fint-y_true)**2 - (last_preds_fcomp-y_true)**2
+
+def create_selector_features(X_train, y_train, X_test, y_test, train_preds, test_preds):
+    #pred_difference = (test_preds[1] - test_preds[0]).reshape(-1, 1)
+    pred_difference = (test_preds[0] - test_preds[1]).reshape(-1, 1)
+    error_difference = _get_last_errors(train_preds[1], train_preds[0], y_train, test_preds[1], test_preds[0], y_test).reshape(-1, 1)
+    statistics = np.concatenate([
+        np.mean(X_test, axis=1, keepdims=True),
+        np.min(X_test, axis=1, keepdims=True),
+        np.max(X_test, axis=1, keepdims=True),
+    ], axis=-1)
+
+    return np.concatenate([X_test, pred_difference, error_difference, statistics], axis=-1)
+
 def main():
     from config import ALL_DATASETS
     total = 0

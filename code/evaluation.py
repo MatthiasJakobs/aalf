@@ -6,13 +6,14 @@ import io
 
 from sklearn.linear_model import LinearRegression
 from config import DATASET_HYPERPARAMETERS
-from utils import rmse, smape
+from utils import highlight_min_multicolumn, rmse, smape, format_significant
 from preprocessing import load_local_data, load_global_data
 from os import makedirs
 from os.path import exists
 from critdd import Diagrams
 from config import ALL_DATASETS, DS_MAP, MODEL_MAP, LOSS_MAP
 from itertools import product
+from plotz import COLORS
 
 class CPU_Unpickler(pickle.Unpickler):
     def find_class(self, module, name):
@@ -25,7 +26,7 @@ def evaluate_models(ds_name, verbose=False):
     L = dsh['L']
     freq = dsh['freq']
     loss_fn_names = ['rmse', 'smape']
-    model_names = ['linear', 'fcnn', 'deepar']
+    model_names = ['linear', 'fcnn', 'deepar', 'cnn']
 
     (local_X_train, local_y_train), (local_X_val, local_y_val), (local_X_test, local_y_test) = load_local_data(ds_name, L=L, H=1, return_split=['train', 'val', 'test'], verbose=verbose)
     (global_X_train, global_y_train), (global_X_val, global_y_val), (global_X_test, global_y_test) = load_global_data(ds_name, L=L, H=1, freq=freq, return_split=['train', 'val', 'test'], verbose=verbose)
@@ -72,6 +73,14 @@ def evaluate_models(ds_name, verbose=False):
                     m.model = m.model.to('cpu')
             except FileNotFoundError:
                 continue
+        elif m_name == 'cnn':
+            try:
+                with open(f'models/{ds_name}/cnn.pickle', 'rb') as f:
+                    m = CPU_Unpickler(f).load()
+                    m.device = 'cpu'
+                    m.model = m.model.to('cpu')
+            except FileNotFoundError:
+                continue
         else:
             raise NotImplementedError('Unknown model', m_name)
         for X_train, y_train, X_val, y_val, X_test, y_test in zip(global_X_train, global_y_train, global_X_val, global_y_val, global_X_test, global_y_test):
@@ -82,6 +91,10 @@ def evaluate_models(ds_name, verbose=False):
                 y_val = y_val.reshape(y_val.shape[0], -1)
                 X_test = X_test.reshape(X_test.shape[0], -1)
                 y_test = y_test.reshape(y_test.shape[0], -1)
+            if m_name == 'cnn':
+                X_train = np.swapaxes(X_train, 1, 2)
+                X_val = np.swapaxes(X_val, 1, 2)
+                X_test = np.swapaxes(X_test, 1, 2)
 
             train_preds = m.predict(X_train).reshape(y_train.shape)
             val_preds = m.predict(X_val).reshape(y_val.shape)
@@ -109,20 +122,21 @@ def evaluate_models(ds_name, verbose=False):
         print('---'*30)
     
     makedirs('results', exist_ok=True)
-    df.to_csv(f'results/{ds_name}.csv')
+    makedirs('results/basemodel_losses', exist_ok=True)
+    df.to_csv(f'results/basemodel_losses/{ds_name}.csv')
     return df
 
 def generate_cdd_plot(loss_fn='rmse'):
     datasets_to_evaluate = ALL_DATASETS
     dfs = []
-    models = ['linear', 'fcnn', 'deepar']
+    models = ['linear', 'fcnn', 'deepar', 'cnn']
     full_model_names = [f'{model_name}_{loss_fn}' for model_name in models]
 
     for ds_name in datasets_to_evaluate:
-        if not exists(f'results/{ds_name}.csv'):
+        if not exists(f'results/basemodel_losses/{ds_name}.csv'):
             df = evaluate_models(ds_name, verbose=True)
         else:
-            df = pd.read_csv(f'results/{ds_name}.csv', index_col=0)
+            df = pd.read_csv(f'results/basemodel_losses/{ds_name}.csv', index_col=0)
         # Add loss function name to index and remap
         df = df[full_model_names]
         df = df.rename({full_model_name: small_model_name for full_model_name, small_model_name in zip(full_model_names, models)}, axis=1)
@@ -130,31 +144,41 @@ def generate_cdd_plot(loss_fn='rmse'):
 
     two_dimensional_diagram = Diagrams(
         dfs,
-        diagram_names=[DS_MAP[ds_name] for ds_name in datasets_to_evaluate],
+        diagram_names=[DS_MAP[ds_name].replace(' ', r'\\') for ds_name in datasets_to_evaluate],
         treatment_names=[MODEL_MAP[model_name] for model_name in models],
         maximize_outcome=False,
     )
     makedirs('plots', exist_ok=True)
     two_dimensional_diagram.to_file(
-        'plots/2d_example.tex',
-        axis_options={
-            'width': '372.0pt',
-            'title': loss_fn
+        'plots/cdd_single_models.tex',
+        preamble = "\n".join([ # colors are defined before \begin{document}
+            #fr"\definecolor{{color1}}{{HTML}}{{{COLORS.blue}}}",
+        ]),
+        axis_options = { # style the plot
+            "cycle list": ",".join([ # define the markers for treatments
+                r"{color1,mark=x,very thick,mark options={scale=2}}",
+                r"{color3,mark=x,very thick,mark options={scale=2}}",
+                r"{color2,mark=x,very thick,mark options={scale=2}}",
+                r"{color4,mark=x,very thick,mark options={scale=2}}",
+            ]),
+            'width': '360', # should be 372 but axis labels are not considered
+            'height': r'0.9*\axisdefaultheight',
+            'xticklabel style': r'font=\fontsize{8}{8}\selectfont',
+            'yticklabel style': r'font=\fontsize{8}{8}\selectfont, align=right',
+            'legend style': r'at={(0.98, 0.7)}, font=\fontsize{8}{8}\selectfont,/tikz/every odd column/.append style={column sep=.25em}',
         },
     )
 
 def generate_latex_table():
     datasets_to_evaluate = ALL_DATASETS
     dfs = []
-    models = ['linear', 'fcnn', 'deepar']
-    #loss_function_names = ['rmse', 'smape']
-    #full_model_names = [f'{model_name}_{loss_fn}' for model_name in models]
+    loss_function_names = ['RMSE', 'SMAPE']
 
     for ds_name in datasets_to_evaluate:
-        if not exists(f'results/{ds_name}.csv'):
+        if not exists(f'results/basemodel_losses/{ds_name}.csv'):
             df = evaluate_models(ds_name, verbose=True)
         else:
-            df = pd.read_csv(f'results/{ds_name}.csv', index_col=0)
+            df = pd.read_csv(f'results/basemodel_losses/{ds_name}.csv', index_col=0)
         # Take mean per loss
         df = df.mean(axis=0)
         # Split name to multiindex
@@ -163,13 +187,25 @@ def generate_latex_table():
         df.columns = pd.MultiIndex.from_tuples(df.columns)
         dfs.append(df)
 
-    print(pd.concat(dfs))
+    df = pd.concat(dfs)
+
+    # Style table
+    df = df.apply(format_significant, axis=1)
+    df = df.apply(highlight_min_multicolumn, metric_names=loss_function_names, axis=1)
+
+    latex_output = df.to_latex(
+        multirow=True,
+        escape=False, 
+        multicolumn_format='l',
+    )
+    with open(f'plots/single_results.tex', 'w') as f:
+        f.write(latex_output)
 
 def main():
-    #generate_cdd_plot(loss_fn='rmse')
-    for ds_name in ['nn5_weekly']:
-        evaluate_models(ds_name, verbose=True)
-    #generate_latex_table()
+    # for ds_name in ALL_DATASETS:
+    #     evaluate_models(ds_name, verbose=True)
+    # generate_cdd_plot(loss_fn='rmse')
+    generate_latex_table()
 
 if __name__ == '__main__':
     main()

@@ -40,6 +40,7 @@ def default_plot(height_fraction=1.0, width_fraction=1.0, subplots=None, sharex=
     tex_fonts = {
         # Use LaTeX to write all text
         'text.usetex': True,
+        'text.latex.preamble': '\\usepackage{amssymb}\n\\usepackage{amsmath}',
         'font.family': 'serif',
         'axes.prop_cycle': f'cycler("color", {COLORMAP})',
         # Use 10pt font in plots, to match 10pt font in document

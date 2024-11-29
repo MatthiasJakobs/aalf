@@ -6,6 +6,7 @@ from tsx.utils import get_device, EarlyStopping
 from preprocessing import _load_data, generate_covariates
 from multiprocessing import cpu_count
 from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestClassifier
 
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.utils import resample
@@ -147,6 +148,7 @@ class TorchBase(nn.Module):
         ES = EarlyStopping(patience=self.patience)
 
         num_workers = min(16, cpu_count())
+        #num_workers = 1
         dl_train = torch.utils.data.DataLoader(ds_train, batch_size=self.batch_size, shuffle=True, num_workers=num_workers)
         dl_val = torch.utils.data.DataLoader(ds_val, batch_size=self.batch_size, shuffle=False, num_workers=num_workers)
 
@@ -459,6 +461,77 @@ class FCNN(TorchBase):
             batch_size = batch_X.shape[0]
 
             batch_X = batch_X.reshape(batch_size, -1)
+
+            predictions = self.model(batch_X).reshape(batch_y.shape)
+            loss = criterion(predictions, batch_y)
+
+            epoch_loss += loss.item()
+
+        return epoch_loss / len(dl)
+
+    @torch.no_grad()
+    def predict(self, X):
+        # Ensure the model is in evaluation mode
+        self.model.eval()
+        if not isinstance(X, torch.Tensor):
+            X = torch.tensor(X, dtype=torch.float32).to(self.device)
+        
+        predictions = self.model(X).squeeze()
+        
+        # Convert output to numpy for consistency with scikit-learn's output format
+        return predictions.cpu().numpy()
+
+class CNN(TorchBase):
+
+    def __init__(self, L, n_channels=1, n_hidden_channels=16, **kwargs):
+        super().__init__(**kwargs)
+        self.model = nn.Sequential(
+            nn.Conv1d(n_channels, n_hidden_channels, 3, padding='same'),
+            nn.ReLU(),
+            nn.Conv1d(n_hidden_channels, n_hidden_channels, 3, padding='same'),
+            nn.Flatten(),
+            nn.Linear(n_hidden_channels*L, 1)
+        ).to(self.device)
+
+    def train_epoch(self, e, dl, n_batches_per_epoch):
+        criterion = nn.MSELoss()
+        epoch_loss = 0.0
+        n = 0
+        for batch_X, batch_y in tqdm.tqdm(dl, total=n_batches_per_epoch, desc=f'epoch {e} train', disable=(not self.show_progress)):
+            batch_X = batch_X.to(self.device)
+            batch_y = batch_y.to(self.device)
+            
+            # Desired shape: (batch_size, n_channel, n_timesteps)
+            batch_X = batch_X.permute(0, 2, 1)
+            batch_y = batch_y.permute(0, 2, 1)
+
+            predictions = self.model(batch_X)
+            loss = criterion(predictions.reshape(batch_y.shape), batch_y)
+            
+            # Backward pass and optimization
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+            
+            epoch_loss += loss.item()
+
+            if n >= n_batches_per_epoch:
+                break
+            n += 1 
+
+        return epoch_loss / n_batches_per_epoch
+
+    @torch.no_grad()
+    def evaluate(self, e, dl):
+        criterion = nn.MSELoss()
+        epoch_loss = 0.0
+        for batch_X, batch_y in tqdm.tqdm(dl, total=len(dl), desc=f'epoch {e} evaluation', disable=(not self.show_progress)):
+            batch_X = batch_X.to(self.device)
+            batch_y = batch_y.to(self.device)
+
+            # Desired shape: (batch_size, n_channel, n_timesteps)
+            batch_X = batch_X.permute(0, 2, 1)
+            batch_y = batch_y.permute(0, 2, 1)
 
             predictions = self.model(batch_X).reshape(batch_y.shape)
             loss = criterion(predictions, batch_y)
