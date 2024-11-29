@@ -73,6 +73,8 @@ def compute_baselines(ds_name, debug=False):
     # Load dataset hyperparameters
     dsh = DATASET_HYPERPARAMETERS[ds_name] 
     L = dsh['L']
+    if 'fint' not in dsh or 'fcomp' not in dsh:
+        return
     fint_name = dsh['fint']
     fcomp_name = dsh['fcomp']
 
@@ -93,7 +95,6 @@ def compute_baselines(ds_name, debug=False):
     # Run selections
     if n_datapoints > 16 and not debug:
         from joblib import Parallel, delayed
-        # TODO: Run in parallel
         result = Parallel(n_jobs=-1, backend='loky')(delayed(_compute_individual)(
             X_train=local_X_train[ds_index],
             y_train=local_y_train[ds_index],
