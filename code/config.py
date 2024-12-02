@@ -30,7 +30,7 @@ CNN_HYPERPARAMETERS = {
     'australian_electricity_demand': {'n_hidden_channels': 32, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 64, 'limit_train_batches': 1024},
     'nn5_daily_nomissing': {'n_hidden_channels': 32, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 64, 'limit_train_batches': None},
     'pedestrian_counts': {'n_hidden_channels': 32, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
-    'kdd_cup_nomissing': {'n_hidden_channels': 16, 'max_epochs': 100, 'learning_rate': 6e-4, 'batch_size': 64, 'limit_train_batches': None},
+    'kdd_cup_nomissing': {'n_hidden_channels': 32, 'max_epochs': 100, 'learning_rate': 6e-4, 'batch_size': 64, 'limit_train_batches': None},
     'solar_10_minutes': {'n_hidden_channels': 32, 'max_epochs': 10, 'learning_rate': 1e-3, 'batch_size': 64, 'limit_train_batches': None},
 }
 
