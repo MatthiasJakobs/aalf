@@ -30,6 +30,10 @@ def _load_data(ds_name, return_start_dates=False):
     Xs = [x.to_numpy() for x in ds['series_value']]
     indices = range(len(Xs))
 
+    if ds_name == 'solar_10_minutes': 
+        # Resample to hourly
+        Xs = [x.reshape(-1, 6).mean(axis=1).to_numpy() for x in ds['series_value']]
+
     if 'start_timestamp' in ds.keys():
         start_dates = ds['start_timestamp'].tolist()
     else:
@@ -184,6 +188,8 @@ def create_selector_features(X_train, y_train, X_test, y_test, train_preds, test
     return np.concatenate([X_test, pred_difference, error_difference, statistics], axis=-1)
 
 def main():
+    X_train, X_val, X_test = _load_data('solar_10_minutes')
+    exit()
     from config import ALL_DATASETS
     total = 0
     for ds_name in ALL_DATASETS:

@@ -144,8 +144,9 @@ def main():
     # fit_cnn('nn5_daily_nomissing')
     # fit_cnn('nn5_weekly')
 
-    fit_deepar('kdd_cup_nomissing')
-    fit_fcnn('kdd_cup_nomissing')
+    fit_deepar('solar_10_minutes')
+    fit_cnn('solar_10_minutes')
+    fit_fcnn('solar_10_minutes')
 
 if __name__ == '__main__':
     main()
