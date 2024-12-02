@@ -13,7 +13,7 @@ DEEPAR_HYPERPARAMETERS = {
     'nn5_daily_nomissing': {'num_layers': 1, 'hidden_size': 25, 'max_epochs':100, 'limit_train_batches': None, 'batch_size': 256, 'dropout': 0 },
     'pedestrian_counts': {'num_layers': 1, 'hidden_size': 100, 'max_epochs':200, 'limit_train_batches': None, 'batch_size': 256, 'dropout': 0 },
     'kdd_cup_nomissing': {'num_layers': 1, 'hidden_size': 16, 'max_epochs':20, 'limit_train_batches': None, 'batch_size': 64, 'dropout': 0},
-    'solar_10_minutes': {'learning_rate': 1e-4, 'num_layers': 1, 'hidden_size': 16, 'max_epochs':100, 'limit_train_batches': None, 'batch_size': 64, 'dropout': 0},
+    'solar_10_minutes': {'learning_rate': 6e-4, 'num_layers': 1, 'hidden_size': 16, 'max_epochs':10, 'limit_train_batches': 1024, 'batch_size': 64, 'dropout': 0},
 }
 
 FCN_HYPERPARAMETERS = {
