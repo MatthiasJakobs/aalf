@@ -85,6 +85,9 @@ def load_local_data(ds_name, L, H, return_split=None, verbose=True):
 
     X_train, X_val, X_test = _load_data(ds_name)
     for ds_index in tqdm.trange(len(X_train), desc=f'[{ds_name}] get local data', disable=(not verbose)):
+        val_length = len(X_val[ds_index])
+        if val_length <= L+H:
+            continue
         if 'train' in return_split:
             x_train, y_train = windowing(X_train[ds_index], L=L, H=H)
             _x_train.append(x_train)
@@ -126,6 +129,9 @@ def load_global_data(ds_name, L, H, freq, return_split=None, verbose=True):
 
         train_length = len(X_train)
         val_length = len(X_val)
+
+        if val_length <= L+H:
+            continue
 
         if 'train' in return_split:
             C_train = covariates[:train_length]
