@@ -87,7 +87,7 @@ class Oracle:
         # How many to take at least
         B0 = int(np.ceil(self.p * len(errors)))
         # How many to take at max
-        Bmax = (errors < self.threshold).sum()
+        Bmax = (errors < self.threshold).sum() - 1
 
         B = max(Bmax, B0)
 
@@ -115,7 +115,7 @@ def _run_selector(p, model_class, hyperparameters, n_repeats, X_train, y_train, 
         model.fit(_X_val, s_star_val)
         selector_preds = model.predict(_X_test).squeeze()
 
-        _tn, _fp, _fn, _tp = confusion_matrix(s_star_test, selector_preds).ravel()
+        _tn, _fp, _fn, _tp = confusion_matrix(s_star_test, selector_preds, labels=[0, 1]).ravel()
         tn += _tn
         fp += _fp
         fn += _fn
@@ -202,6 +202,19 @@ def highlight_max_column(col):
     formatted_col[sorted_indices[-2]] = fr'\underline{{{formatted_col[sorted_indices[-2]]}}}'
 
     return formatted_col
+
+def create_selector_table(ps):
+    # Create large table
+    dfs = {DS_MAP[ds_name]: compute_selection_accuracy(ds_name, ps) for ds_name in ALL_DATASETS}
+    dfs = {k: v.apply(format_significant, axis=0) for k, v in dfs.items()}
+    dfs = {k: v.apply(highlight_max_column, axis=0) for k, v in dfs.items()}
+    dfs = pd.concat(dfs)
+    # Export to LaTeX
+    latex_table = dfs.to_latex(multicolumn=True, multirow=True, float_format='%.3f', index_names=False)
+
+    print(latex_table)
+    with open('plots/classifier_table.tex', 'w') as f:
+        f.write(latex_table)
         
 def main():
     ps = [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
@@ -216,17 +229,7 @@ def main():
         for sel_name in SELECTORS.keys():
             compute_selector(ds_name, fint_name, fcomp_name, sel_name, ps)
 
-    # Create large table
-    dfs = {DS_MAP[ds_name]: compute_selection_accuracy(ds_name, ps) for ds_name in ['nn5_daily_nomissing', 'australian_electricity_demand', 'weather']}
-    dfs = {k: v.apply(format_significant, axis=0) for k, v in dfs.items()}
-    dfs = {k: v.apply(highlight_max_column, axis=0) for k, v in dfs.items()}
-    dfs = pd.concat(dfs)
-    # Export to LaTeX
-    latex_table = dfs.to_latex(multicolumn=True, multirow=True, float_format='%.3f', index_names=False)
-
-    print(latex_table)
-    with open('plots/classifier_table.tex', 'w') as f:
-        f.write(latex_table)
+    create_selector_table(ps)
 
 if __name__ == '__main__':
     main()
