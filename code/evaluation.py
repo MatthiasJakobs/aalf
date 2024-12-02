@@ -193,10 +193,13 @@ def generate_latex_table():
     df = df.apply(format_significant, axis=1)
     df = df.apply(highlight_min_multicolumn, metric_names=loss_function_names, axis=1)
 
+    df = df.transpose()
+
     latex_output = df.to_latex(
-        multirow=True,
+        multirow=False,
         escape=False, 
         multicolumn_format='l',
+        column_format=r'llp{2cm}p{1.0cm}p{1.0cm}p{1.3cm}p{1.0cm}p{1.0cm}',
     )
     with open(f'plots/single_results.tex', 'w') as f:
         f.write(latex_output)
@@ -204,6 +207,7 @@ def generate_latex_table():
 def main():
     # for ds_name in ALL_DATASETS:
     #     evaluate_models(ds_name, verbose=True)
+    #evaluate_models('kdd_cup_nomissing', verbose=True)
     # generate_cdd_plot(loss_fn='rmse')
     generate_latex_table()
 
