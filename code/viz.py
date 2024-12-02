@@ -42,19 +42,21 @@ def plot_loss_floor():
             preds = pickle.load(f)
 
         losses = pd.read_csv(f'results/basemodel_losses/{ds_name}.csv', index_col=0)
-        losses = losses[['linear_rmse', 'fcnn_rmse', 'deepar_rmse']]
-        losses = losses.rename({'linear_rmse': 'linear', 'fcnn_rmse': 'fcnn', 'deepar_rmse': 'deepar'}, axis=1).mean()
+        losses = losses[['linear_rmse', 'fcnn_rmse', 'deepar_rmse', 'cnn_rmse']]
+        losses = losses.rename({'linear_rmse': 'linear', 'fcnn_rmse': 'fcnn', 'deepar_rmse': 'deepar', 'cnn_rmse': 'cnn'}, axis=1).mean()
 
         # Plot both oracles
         axs[idx].scatter(0, losses['fcnn'], color=COLORS.green, marker='x', s=20, label='FCNN' if idx == 0 else '')
         axs[idx].scatter(0, losses['deepar'], color=COLORS.red, marker='x', s=20, label='DeepAR' if idx == 0 else '')
+        axs[idx].scatter(0, losses['cnn'], color=COLORS.orange, marker='x', s=20, label='CNN' if idx == 0 else '')
         axs[idx].scatter(1, losses['linear'], color=COLORS.blue, marker='x', s=20, label='AR' if idx == 0 else '')
 
         axs[idx] = plot_oracle_line(axs[idx], ys=preds['test']['y'], fint_preds=preds['test']['linear'], fcomp_preds=preds['test']['fcnn'], color=COLORS.green, label=r'$\mathcal{O}(\text{AR},\text{FCNN})$' if idx == 0 else '')
         axs[idx] = plot_oracle_line(axs[idx], ys=preds['test']['y'], fint_preds=preds['test']['linear'], fcomp_preds=preds['test']['deepar'], color=COLORS.red, label=r'$\mathcal{O}(\text{AR},\text{DeepAR})$' if idx == 0 else '')
+        axs[idx] = plot_oracle_line(axs[idx], ys=preds['test']['y'], fint_preds=preds['test']['linear'], fcomp_preds=preds['test']['cnn'], color=COLORS.orange, label=r'$\mathcal{O}(\text{AR},\text{CNN})$' if idx == 0 else '')
         axs[idx].set_title(DS_MAP[ds_name])
 
-    fig.legend(ncols=5, loc='center', bbox_to_anchor=(0.5, -0.01))
+    fig.legend(ncols=6, loc='center', bbox_to_anchor=(0.5, -0.01))
     fig.tight_layout()
     fig.savefig('plots/loss_floor.pdf', bbox_inches='tight')
 
@@ -97,5 +99,5 @@ def plot_optimum_example():
 
 
 if __name__ == '__main__':
-    #plot_loss_floor()
+    plot_loss_floor()
     plot_optimum_example()
