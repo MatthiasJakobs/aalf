@@ -21,7 +21,7 @@ FCN_HYPERPARAMETERS = {
     'nn5_daily_nomissing': {'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
     'weather': {'hidden_size': 64, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': 10_000},
     'pedestrian_counts': {'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
-    'kdd_cup_nomissing': {'max_epochs': 20, 'learning_rate': 6e-4, 'batch_size': 256, 'limit_train_batches': None},
+    'kdd_cup_nomissing': {'max_epochs': 20, 'learning_rate': 6e-4, 'batch_size': 64, 'limit_train_batches': None},
     'solar_10_minutes': {'max_epochs': 10, 'learning_rate': 1e-3, 'batch_size': 64, 'limit_train_batches': None},
 }
 
