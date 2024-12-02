@@ -140,7 +140,7 @@ class TorchBase(nn.Module):
         pass
     
     @torch.no_grad()
-    def evaluate(self, e, dl):
+    def evaluate(self, e, dl, n_batches_per_epoch):
         pass
 
     def fit(self, ds_train, ds_val, verbose=False):
@@ -159,7 +159,7 @@ class TorchBase(nn.Module):
 
         for epoch in range(self.max_epochs):
             epoch_loss = self.train_epoch(epoch, dl_train, n_batches_per_epoch)
-            val_loss = self.evaluate(epoch, dl_val)
+            val_loss = self.evaluate(epoch, dl_val, n_batches_per_epoch)
 
             ES.update(val_loss, self.state_dict())
             if ES.best_score == val_loss:
@@ -258,10 +258,12 @@ class DeepAR(TorchBase):
         return epoch_loss / n_batches_per_epoch
     
     @torch.no_grad()
-    def evaluate(self, e, dl):
+    def evaluate(self, e, dl, n_batches_per_epoch):
         self.eval()
         squared_errors = 0
-        for b_x, b_c in tqdm.tqdm(dl, desc=f'epoch {e} evaluate', total=len(dl), disable=not self.show_progress):
+        n = 0
+        n_batches_per_epoch = min(n_batches_per_epoch, len(dl))
+        for b_x, b_c in tqdm.tqdm(dl, desc=f'epoch {e} evaluate', total=n_batches_per_epoch, disable=not self.show_progress):
             b_x = torch.cat([b_x, b_c], axis=-1)
             b_x = b_x.to(self.device)
 
@@ -274,8 +276,11 @@ class DeepAR(TorchBase):
                 mu, _, h0, c0 = self(b_x[:, t].unsqueeze(1), h0, c0)
 
             squared_errors += ((mu-b_x[:, -1, 0])**2).sum()
+            if n >= n_batches_per_epoch:
+                break
+            n += 1
 
-        return np.sqrt(squared_errors.cpu().numpy() / len(dl.dataset))
+        return np.sqrt(squared_errors.cpu().numpy() / n_batches_per_epoch)
 
 class DeepVAR(TorchBase):
     def __init__(self, n_channel=1, hidden_size=50, rank=10, num_layers=2, dropout=0.1, random_state=None, **kwargs):
@@ -393,10 +398,12 @@ class DeepVAR(TorchBase):
         return epoch_loss / n_batches_per_epoch
     
     @torch.no_grad()
-    def evaluate(self, e, dl):
+    def evaluate(self, e, dl, n_batches_per_epoch):
         self.eval()
         squared_errors = 0
-        for b_x, b_c in tqdm.tqdm(dl, desc=f'epoch {e} evaluate', total=len(dl), disable=not self.show_progress):
+        n = 0
+        n_batches_per_epoch = min(n_batches_per_epoch, len(dl))
+        for b_x, b_c in tqdm.tqdm(dl, desc=f'epoch {e} evaluate', total=n_batches_per_epoch, disable=not self.show_progress):
             b_x = b_x.to(self.device)
             b_c = b_c.to(self.device)
 
@@ -410,7 +417,11 @@ class DeepVAR(TorchBase):
 
             squared_errors += ((mu-b_x[:, -1])**2).sum()
 
-        return np.sqrt(squared_errors.cpu().numpy() / len(dl.dataset))
+            if n >= n_batches_per_epoch:
+                break
+            n += 1
+
+        return np.sqrt(squared_errors.cpu().numpy() / n_batches_per_epoch)
 
 class FCNN(TorchBase):
 
@@ -452,10 +463,12 @@ class FCNN(TorchBase):
         return epoch_loss / n_batches_per_epoch
 
     @torch.no_grad()
-    def evaluate(self, e, dl):
+    def evaluate(self, e, dl, n_batches_per_epoch):
         criterion = nn.MSELoss()
         epoch_loss = 0.0
-        for batch_X, batch_y in tqdm.tqdm(dl, total=len(dl), desc=f'epoch {e} evaluation', disable=(not self.show_progress)):
+        n = 0
+        n_batches_per_epoch = min(n_batches_per_epoch, len(dl))
+        for batch_X, batch_y in tqdm.tqdm(dl, total=n_batches_per_epoch, desc=f'epoch {e} evaluation', disable=(not self.show_progress)):
             batch_X = batch_X.to(self.device)
             batch_y = batch_y.to(self.device)
             batch_size = batch_X.shape[0]
@@ -467,7 +480,11 @@ class FCNN(TorchBase):
 
             epoch_loss += loss.item()
 
-        return epoch_loss / len(dl)
+            if n >= n_batches_per_epoch:
+                break
+            n += 1
+
+        return epoch_loss / n_batches_per_epoch
 
     @torch.no_grad()
     def predict(self, X):
@@ -522,10 +539,12 @@ class CNN(TorchBase):
         return epoch_loss / n_batches_per_epoch
 
     @torch.no_grad()
-    def evaluate(self, e, dl):
+    def evaluate(self, e, dl, n_batches_per_epoch):
         criterion = nn.MSELoss()
         epoch_loss = 0.0
-        for batch_X, batch_y in tqdm.tqdm(dl, total=len(dl), desc=f'epoch {e} evaluation', disable=(not self.show_progress)):
+        n = 0
+        n_batches_per_epoch = min(n_batches_per_epoch, len(dl))
+        for batch_X, batch_y in tqdm.tqdm(dl, total=n_batches_per_epoch, desc=f'epoch {e} evaluation', disable=(not self.show_progress)):
             batch_X = batch_X.to(self.device)
             batch_y = batch_y.to(self.device)
 
@@ -538,7 +557,11 @@ class CNN(TorchBase):
 
             epoch_loss += loss.item()
 
-        return epoch_loss / len(dl)
+            if n >= n_batches_per_epoch:
+                break
+            n += 1
+
+        return epoch_loss / n_batches_per_epoch
 
     @torch.no_grad()
     def predict(self, X):
