@@ -87,7 +87,8 @@ class Oracle:
         # How many to take at least
         B0 = int(np.ceil(self.p * len(errors)))
         # How many to take at max
-        Bmax = (errors < self.threshold).sum() - 1
+        #Bmax = (errors < self.threshold).sum() - 1
+        Bmax = (errors < self.threshold).sum() 
 
         B = max(Bmax, B0)
 
