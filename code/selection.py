@@ -54,6 +54,18 @@ SELECTORS = {
         'randomized': True,
         'name': r'$\mathtt{RFu}$',
     },
+    'nn': {
+        'model_class': MLPClassifier,
+        'hyperparameters': {'early_stopping': True, 'max_iter': 500},
+        'randomized': True,
+        'name': r'$\texttt{NN}$',
+    },
+    'upsample_nn': {
+        'model_class': UpsampleEnsembleClassifier,
+        'hyperparameters': {'model_class': MLPClassifier, 'n_member': 9, 'early_stopping': True, 'max_iter': 500},
+        'randomized': True,
+        'name': r'$\texttt{NNu}$',
+    }
 }
 
 class Oracle:
@@ -103,6 +115,10 @@ def _run_selector(p, model_class, hyperparameters, n_repeats, X_train, y_train, 
     oracle = Oracle(p)
     s_star_val = oracle.get_labels(y_val, fcomp_val_preds, fint_val_preds)
     s_star_test = oracle.get_labels(y_test, fcomp_test_preds, fint_test_preds)
+
+    n_datapoints_with_label = np.unique(s_star_val, return_counts=True)[1]
+    if n_datapoints_with_label[0] < 2 or n_datapoints_with_label[1] < 2:
+        return 0, 0, 0, 0
 
     train_preds = np.vstack([fcomp_train_preds, fint_train_preds])
     val_preds = np.vstack([fcomp_val_preds, fint_val_preds])
