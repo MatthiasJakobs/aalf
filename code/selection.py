@@ -38,7 +38,7 @@ SELECTORS = {
     },
     'upsample_logistic_regression': {
         'model_class': UpsampleEnsembleClassifier,
-        'hyperparameters': {'model_class': LogisticRegression, 'n_member': 9, 'random_state': 20241127},
+        'hyperparameters': {'model_class': LogisticRegression, 'n_member': 9, 'random_state': 20241127, 'max_iter': 1000},
         'randomized': True,
         'name': r'$\texttt{LRu}$',
     },
