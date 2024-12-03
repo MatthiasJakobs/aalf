@@ -188,8 +188,6 @@ def create_selector_features(X_train, y_train, X_test, y_test, train_preds, test
     return np.concatenate([X_test, pred_difference, error_difference, statistics], axis=-1)
 
 def main():
-    X_train, X_val, X_test = _load_data('solar_10_minutes')
-    exit()
     from config import ALL_DATASETS
     total = 0
     for ds_name in ALL_DATASETS:

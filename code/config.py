@@ -3,7 +3,7 @@ DATASET_HYPERPARAMETERS = {
     'pedestrian_counts': {'freq': '1h', 'L': 24 , 'fint': 'linear', 'fcomp': 'deepar' },
     'nn5_daily_nomissing': {'freq': '1d', 'L': 14, 'fint': 'linear', 'fcomp': 'cnn' },
     'weather': {'freq': '1d', 'L': 14, 'fint': 'linear', 'fcomp': 'deepar' },
-    'kdd_cup_nomissing': {'freq': '1h', 'L': 24, },
+    'kdd_cup_nomissing': {'freq': '1h', 'L': 24, 'fint': 'linear', 'fcomp': 'fcnn' },
     'solar_10_minutes':{'freq': '1h', 'L': 24, 'fint': 'linear', 'fcomp': 'cnn' }
 }
 
