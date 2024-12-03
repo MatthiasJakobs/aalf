@@ -23,36 +23,36 @@ SELECTORS = {
         'hyperparameters': {},
         'n_repeats': 100,
         'randomized': True,
-        'name': 'Random',
+        'name': r'$\mathtt{RND}$',
     },
     'logistic_regression': {
         'model_class': LogisticRegression,
         'hyperparameters': {'max_iter': 1000},
-        'name': 'Logistic Regression',
+        'name': r'$\mathtt{LR}$',
     },
     'random_forest_128': {
         'model_class': RandomForestClassifier,
         'hyperparameters': {'n_estimators': 128, 'random_state': 20241127},
         'randomized': True,
-        'name': 'Random Forest',
+        'name': '$\mathtt{RF}$',
     },
-    # 'upsample_logistic_regression': {
-    #     'model_class': UpsampleEnsembleClassifier,
-    #     'hyperparameters': {'model_class': LogisticRegression, 'n_member': 64, 'random_state': 20241127},
-    #     'randomized': True,
-    #     'name': 'Logistic Regression (upsampled)',
-    # },
+    'upsample_logistic_regression': {
+        'model_class': UpsampleEnsembleClassifier,
+        'hyperparameters': {'model_class': LogisticRegression, 'n_member': 9, 'random_state': 20241127},
+        'randomized': True,
+        'name': r'$\texttt{LRu}$',
+    },
     # 'upsample_tree': {
     #     'model_class': UpsampleEnsembleClassifier,
     #     'hyperparameters': {'model_class': DecisionTreeClassifier, 'n_member': 128, 'random_state': 20241127},
     #     'randomized': True,
-    #     'name': 'Decision Tree (upsampled)',
+    #     'name': r'$Decision Tree (upsampled)',
     # },
     'upsample_forest': {
         'model_class': UpsampleEnsembleClassifier,
         'hyperparameters': {'model_class': RandomForestClassifier, 'n_member': 9, 'n_estimators': 128, 'random_state': 20241127},
         'randomized': True,
-        'name': 'Random Forest (upsampled)',
+        'name': r'$\mathtt{RFu}$',
     },
 }
 
@@ -170,11 +170,11 @@ def compute_selector(ds_name, fint_name, fcomp_name, sel_name, ps):
         f1 = (2 * tp) / (2 * tp + fp + fn)
 
         try:
-            results[name]
+            results[sel_name]
         except KeyError:
-            results[name] = {}
+            results[sel_name] = {}
 
-        results[name][p] = f1
+        results[sel_name][p] = f1
 
     with open(f'results/selection/{ds_name}.pickle', 'wb') as f:
         pickle.dump(results, f)
@@ -186,7 +186,7 @@ def compute_selection_accuracy(ds_name, ps):
     df = pd.DataFrame(columns=['modelname']+[str(p) for p in ps])
     model_names = list(results.keys())
     for model_name in model_names:
-        scores = {str(k): [float(v)] for k, v in results[model_name].items()} | {'modelname': [model_name.replace('_', '\_')]}
+        scores = {str(k): [float(v)] for k, v in results[model_name].items()} | {'modelname': [SELECTORS[model_name]['name']]}
         df = pd.concat([df, pd.DataFrame(scores)], ignore_index=True)
 
     df = df.set_index('modelname')
@@ -199,8 +199,8 @@ def highlight_max_column(col):
     sorted_indices = col.argsort()
 
     # Highlight highest in bold, second highest in underscore
-    formatted_col[sorted_indices[-1]] = fr'\textbf{{{formatted_col[sorted_indices[-1]]}}}'
-    formatted_col[sorted_indices[-2]] = fr'\underline{{{formatted_col[sorted_indices[-2]]}}}'
+    formatted_col.iloc[sorted_indices[-1]] = fr'\textbf{{{formatted_col.iloc[sorted_indices[-1]]}}}'
+    formatted_col.iloc[sorted_indices[-2]] = fr'\underline{{{formatted_col.iloc[sorted_indices[-2]]}}}'
 
     return formatted_col
 
@@ -210,25 +210,35 @@ def create_selector_table(ps):
     dfs = {k: v.apply(format_significant, axis=0) for k, v in dfs.items()}
     dfs = {k: v.apply(highlight_max_column, axis=0) for k, v in dfs.items()}
     dfs = pd.concat(dfs)
-    # Export to LaTeX
-    latex_table = dfs.to_latex(multicolumn=True, multirow=True, float_format='%.3f', index_names=False)
 
-    print(latex_table)
+    # Rename columns
+    dfs.columns = [fr'$p={p}$' for p in dfs.columns]
+    print(dfs.columns)
+
+    # Export to LaTeX
+    latex_table = dfs.to_latex(
+        #multicolumn=True, 
+        multirow=True, 
+        float_format='%.3f', 
+        index_names=False,
+        column_format=r'p{2cm}lllllll',
+    )
+
     with open('plots/classifier_table.tex', 'w') as f:
         f.write(latex_table)
         
 def main():
     ps = [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
 
-    for ds_name in ALL_DATASETS:
-        dsh = DATASET_HYPERPARAMETERS[ds_name]
-        if 'fint' not in dsh or 'fcomp' not in dsh:
-            continue
+    # for ds_name in ALL_DATASETS:
+    #     dsh = DATASET_HYPERPARAMETERS[ds_name]
+    #     if 'fint' not in dsh or 'fcomp' not in dsh:
+    #         continue
         
-        fint_name = dsh['fint']
-        fcomp_name = dsh['fcomp']
-        for sel_name in SELECTORS.keys():
-            compute_selector(ds_name, fint_name, fcomp_name, sel_name, ps)
+    #     fint_name = dsh['fint']
+    #     fcomp_name = dsh['fcomp']
+    #     for sel_name in SELECTORS.keys():
+    #         compute_selector(ds_name, fint_name, fcomp_name, sel_name, ps)
 
     create_selector_table(ps)
 
