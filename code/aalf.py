@@ -4,9 +4,9 @@ import tqdm
 import pickle 
 from selection import Oracle
 from preprocessing import load_local_data, create_selector_features
-from sklearn.linear_model import LogisticRegression
 from config import DATASET_HYPERPARAMETERS, ALL_DATASETS
 from joblib import Parallel, delayed
+from sklearn.ensemble import RandomForestClassifier
 from os import makedirs
 from utils import rmse, smape
 
@@ -21,7 +21,7 @@ class AALF:
         oracle = Oracle(self.p)
         s_star_val = oracle.get_labels(y_val, val_preds[0], val_preds[1])
 
-        sel = LogisticRegression()
+        sel = RandomForestClassifier(n_estimators=128, random_state=20241127)
         sel.fit(X_val, s_star_val)
         selection = sel.predict(X_test).astype(np.int8)
 
@@ -87,7 +87,7 @@ def run(ds_name, p, debug=False):
             fcomp_preds_train=fcomp_train_preds[ds_index],
             fcomp_preds_val=fcomp_val_preds[ds_index],
             fcomp_preds_test=fcomp_test_preds[ds_index],
-            ) for ds_index in tqdm.trange(n_datapoints, desc=f'[{ds_name}]'))
+            ) for ds_index in tqdm.trange(n_datapoints, desc=f'[{ds_name} - {p}]'))
     else:
         result = [_run_single(
             p=p,
@@ -103,7 +103,7 @@ def run(ds_name, p, debug=False):
             fcomp_preds_train=fcomp_train_preds[ds_index],
             fcomp_preds_val=fcomp_val_preds[ds_index],
             fcomp_preds_test=fcomp_test_preds[ds_index],
-            ) for ds_index in tqdm.trange(n_datapoints, desc=f'[{ds_name}-DBG]')]
+            ) for ds_index in tqdm.trange(n_datapoints, desc=f'[{ds_name} - {p} - DBG]')]
 
     result = pd.DataFrame(result)
     makedirs('results/aalf', exist_ok=True)
