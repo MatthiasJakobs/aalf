@@ -71,7 +71,7 @@ def run(ds_name, p, debug=False):
     fcomp_test_preds = preds['test'][fcomp_name]
 
     # Run selections
-    if n_datapoints > 16 and not debug:
+    if not debug:
         from joblib import Parallel, delayed
         result = Parallel(n_jobs=-1, backend='loky')(delayed(_run_single)(
             p=p,
