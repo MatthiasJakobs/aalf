@@ -30,42 +30,36 @@ SELECTORS = {
         'hyperparameters': {'max_iter': 1000},
         'name': r'$\mathtt{LR}$',
     },
+    'upsample_logistic_regression': {
+        'model_class': UpsampleEnsembleClassifier,
+        'hyperparameters': {'model_class': LogisticRegression, 'n_member': 9, 'random_state': 20241127, 'max_iter': 1000},
+        'randomized': True,
+        'name': r'$\mathtt{LRu}$',
+    },
+    'nn': {
+        'model_class': MLPClassifier,
+        'hyperparameters': {'early_stopping': True, 'max_iter': 500},
+        'randomized': True,
+        'name': r'$\mathtt{NN}$',
+    },
+    'upsample_nn': {
+        'model_class': UpsampleEnsembleClassifier,
+        'hyperparameters': {'model_class': MLPClassifier, 'n_member': 9, 'early_stopping': True, 'max_iter': 500},
+        'randomized': True,
+        'name': r'$\mathtt{NNu}$',
+    },
     'random_forest_128': {
         'model_class': RandomForestClassifier,
         'hyperparameters': {'n_estimators': 128, 'random_state': 20241127},
         'randomized': True,
         'name': '$\mathtt{RF}$',
     },
-    'upsample_logistic_regression': {
-        'model_class': UpsampleEnsembleClassifier,
-        'hyperparameters': {'model_class': LogisticRegression, 'n_member': 9, 'random_state': 20241127, 'max_iter': 1000},
-        'randomized': True,
-        'name': r'$\texttt{LRu}$',
-    },
-    # 'upsample_tree': {
-    #     'model_class': UpsampleEnsembleClassifier,
-    #     'hyperparameters': {'model_class': DecisionTreeClassifier, 'n_member': 128, 'random_state': 20241127},
-    #     'randomized': True,
-    #     'name': r'$Decision Tree (upsampled)',
-    # },
     'upsample_forest': {
         'model_class': UpsampleEnsembleClassifier,
         'hyperparameters': {'model_class': RandomForestClassifier, 'n_member': 9, 'n_estimators': 128, 'random_state': 20241127},
         'randomized': True,
         'name': r'$\mathtt{RFu}$',
     },
-    'nn': {
-        'model_class': MLPClassifier,
-        'hyperparameters': {'early_stopping': True, 'max_iter': 500},
-        'randomized': True,
-        'name': r'$\texttt{NN}$',
-    },
-    'upsample_nn': {
-        'model_class': UpsampleEnsembleClassifier,
-        'hyperparameters': {'model_class': MLPClassifier, 'n_member': 9, 'early_stopping': True, 'max_iter': 500},
-        'randomized': True,
-        'name': r'$\texttt{NNu}$',
-    }
 }
 
 class Oracle:
@@ -237,8 +231,14 @@ def create_selector_table(ps):
         multirow=True, 
         float_format='%.3f', 
         index_names=False,
-        column_format=r'p{2cm}lllllll',
+        column_format=r'llllllll',
     )
+
+    # Replace clines with midrules
+    latex_table = latex_table.replace(r'\cline{1-8}', r'\midrule')
+    # Remove last midrule (since its unecessary)
+    rows = latex_table.split('\n')
+    latex_table = '\n'.join(rows[:-4] + rows[-3:])
 
     with open('plots/classifier_table.tex', 'w') as f:
         f.write(latex_table)

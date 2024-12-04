@@ -56,7 +56,7 @@ def plot_loss_floor():
         axs[idx] = plot_oracle_line(axs[idx], ys=preds['test']['y'], fint_preds=preds['test']['linear'], fcomp_preds=preds['test']['cnn'], color=COLORS.orange, label=r'$\mathcal{O}(\text{AR},\text{CNN})$' if idx == 0 else '')
         axs[idx].set_title(DS_MAP[ds_name])
 
-    fig.legend(ncols=6, loc='center', bbox_to_anchor=(0.5, -0.01))
+    fig.legend(ncols=7, loc='center', columnspacing=1.0, handletextpad=0.4, bbox_to_anchor=(0.5, -0.01))
     fig.tight_layout()
     fig.savefig('plots/loss_floor.pdf', bbox_inches='tight')
 
