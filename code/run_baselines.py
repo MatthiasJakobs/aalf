@@ -10,6 +10,7 @@ from tsx.utils import string_to_randomstate
 from utils import smape, rmse
 from os import makedirs
 from config import ALL_DATASETS
+from critdd import Diagram
 
 def _compute_individual(X_train, y_train, X_val, y_val, X_test, y_test, fcomp_preds_val, fcomp_preds_test, fint_preds_val, fint_preds_test, random_state=None):
     # TODO: Provide the same input data as in AALF
@@ -17,6 +18,18 @@ def _compute_individual(X_train, y_train, X_val, y_val, X_test, y_test, fcomp_pr
     results = {}
     val_preds = np.vstack([fcomp_preds_val, fint_preds_val])
     test_preds = np.vstack([fcomp_preds_test, fint_preds_test])
+
+    # Mean Value baseline
+    prediction = X_test.mean(axis=-1)
+    loss_rmse = rmse(y_test, prediction)
+    loss_smape = smape(y_test, prediction)
+    results = results | {'mv_rmse': loss_rmse, 'mv_smape': loss_smape }
+
+    # Last Value baseline
+    prediction = X_test[..., -1]
+    loss_rmse = rmse(y_test, prediction)
+    loss_smape = smape(y_test, prediction)
+    results = results | {'mv_rmse': loss_rmse, 'mv_smape': loss_smape }
 
     try:
         ade = ADE(random_state)
@@ -128,9 +141,68 @@ def compute_baselines(ds_name, debug=False):
         makedirs('results/baseline_selectors/', exist_ok=True)
         result.to_csv(f'results/baseline_selectors/{ds_name}.csv')
 
+def calc_cdd():
+
+    METHOD_NAMES = {
+        'aalf_0.5': r'$\textbf{AALF}_{p=0.5}$',
+        'aalf_0.6': r'$\textbf{AALF}_{p=0.6}$',
+        'aalf_0.7': r'$\textbf{AALF}_{p=0.7}$',
+        'aalf_0.8': r'$\textbf{AALF}_{p=0.8}$',
+        'aalf_0.9': r'$\textbf{AALF}_{p=0.9}$',
+        'aalf_0.95': r'$\textbf{AALF}_{p=0.95}$',
+        'dets': r'$\textbf{DETS}$',
+        'ade': r'$\textbf{ADE}$',
+        'knnroc': r'$\textbf{KNN-RoC}$',
+        'omsroc': r'$\textbf{OMS-RoC}$',
+    }
+
+    result = None
+    
+    # Load data
+    for ds_name in ALL_DATASETS:
+        # Baselines
+        _result_baselines = pd.read_csv(f'results/baseline_selectors/{ds_name}.csv', index_col=0)
+        _result_baselines = _result_baselines[['ade_rmse', 'knnroc_rmse', 'omsroc_rmse', 'dets_rmse']]
+        _result_baselines = _result_baselines.rename(columns={'ade_rmse': 'ade', 'knnroc_rmse': 'knnroc', 'omsroc_rmse': 'omsroc', 'dets_rmse': 'dets'})
+        # AALF
+        _result_aalf = None
+        for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
+            ra = pd.read_csv(f'results/aalf/{ds_name}_{p}.csv', index_col=0)
+            ra = ra.rename(columns={'aalf_rmse': f'aalf_{p}'})
+            ra = ra.drop(columns=['aalf_p', 'aalf_smape', 'true_p'], errors='ignore')
+            if _result_aalf is None:
+                _result_aalf = ra
+            else:
+                _result_aalf = pd.concat([_result_aalf, ra], axis=1)
+
+        _result = pd.concat([_result_aalf, _result_baselines], axis=1)
+
+        if result is None:
+            result = _result
+        else:
+            result = pd.concat([result, _result], ignore_index=True)
+
+    # Create CDD
+    #result = result.iloc[:150]
+
+    diag = Diagram(
+        result.to_numpy(),
+        treatment_names=[METHOD_NAMES.get(s, s) for s in result.columns],
+        maximize_outcome=False
+    )
+    diag.to_file(
+        'plots/baseline_cdd.tex',
+        axis_options = {
+            'width': 360,
+        }
+    )
+
+
 def main():
     for ds_name in ALL_DATASETS:
         compute_baselines(ds_name, debug=False)
+
+    # calc_cdd()
 
 if __name__ == '__main__':
     main()
