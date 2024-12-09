@@ -10,7 +10,7 @@ from config import DS_MAP, DATASET_HYPERPARAMETERS, ALL_DATASETS
 from preprocessing import load_local_data, create_selector_features
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import SVC
 from sklearn.neural_network import MLPClassifier
@@ -37,17 +37,11 @@ SELECTORS = {
         'randomized': True,
         'name': r'$\mathtt{LRu}$',
     },
-    'nn': {
-        'model_class': MLPClassifier,
-        'hyperparameters': {'early_stopping': True, 'max_iter': 500},
+    'svm': {
+        'model_class': SVC,
+        'hyperparameters': {'random_state': 20241127},
         'randomized': True,
-        'name': r'$\mathtt{NN}$',
-    },
-    'upsample_nn': {
-        'model_class': UpsampleEnsembleClassifier,
-        'hyperparameters': {'model_class': MLPClassifier, 'n_member': 9, 'early_stopping': True, 'max_iter': 500},
-        'randomized': True,
-        'name': r'$\mathtt{NNu}$',
+        'name': r'$\mathtt{SVM}$',
     },
     'random_forest_128': {
         'model_class': RandomForestClassifier,
@@ -61,17 +55,10 @@ SELECTORS = {
         'randomized': True,
         'name': r'$\mathtt{RFu}$',
     },
-    'svm': {
-        'model_class': SVC,
-        'hyperparameters': {'random_state': 20241127},
-        'randomized': True,
-        'name': r'$\mathtt{SVM}$',
-    },
-    'svm_balanced': {
-        'model_class': SVC,
-        'hyperparameters': {'class_weight': 'balanced', 'random_state': 20241127},
-        'randomized': True,
-        'name': r'$\mathtt{SVMb}$',
+    'ensemble': {
+        'model_class': VotingClassifier,
+        'hyperparameters': {'estimators': [('lr', LogisticRegression(max_iter=1000)), ('rf', RandomForestClassifier(n_estimators=128, random_state=20241127)), ('svm', SVC(random_state=20241127))], 'n_jobs': 3},
+        'name': r'$\mathtt{Ens}$',
     },
 }
 
@@ -209,7 +196,9 @@ def compute_selection_accuracy(ds_name, ps):
     df = pd.DataFrame(columns=['modelname']+[str(p) for p in ps])
     model_names = list(results.keys())
     for model_name in model_names:
-        scores = {str(k): [float(v)] for k, v in results[model_name].items()} | {'modelname': [SELECTORS[model_name]['name']]}
+        scores = {str(k): [float(v)] for k, v in results[model_name].items()} 
+        if model_name in SELECTORS.keys():
+            scores = scores  | {'modelname': [SELECTORS[model_name]['name']]}
         df = pd.concat([df, pd.DataFrame(scores)], ignore_index=True)
 
     df = df.set_index('modelname')
@@ -259,15 +248,14 @@ def create_selector_table(ps):
 def main():
     ps = [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
 
-    # for ds_name in ALL_DATASETS:
-    #     dsh = DATASET_HYPERPARAMETERS[ds_name]
-    #     if 'fint' not in dsh or 'fcomp' not in dsh:
-    #         continue
+    for ds_name in ALL_DATASETS:
+        dsh = DATASET_HYPERPARAMETERS[ds_name]
+        if 'fint' not in dsh or 'fcomp' not in dsh:
+            continue
         
-    #     fint_name = dsh['fint']
-    #     fcomp_name = dsh['fcomp']
-    #     for sel_name in SELECTORS.keys():
-    #         compute_selector(ds_name, fint_name, fcomp_name, sel_name, ps)
+        fint_name = dsh['fint']
+        fcomp_name = dsh['fcomp']
+        compute_selector(ds_name, fint_name, fcomp_name, 'ensemble', ps)
 
     create_selector_table(ps)
 
