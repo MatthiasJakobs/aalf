@@ -43,6 +43,12 @@ SELECTORS = {
         'randomized': True,
         'name': r'$\mathtt{SVM}$',
     },
+    'upsample_svm': {
+        'model_class': UpsampleEnsembleClassifier,
+        'hyperparameters': {'model_class': SVC, 'n_member': 9, 'random_state': 20241127},
+        'randomized': True,
+        'name': r'$\mathtt{SVMu}$',
+    },
     'random_forest_128': {
         'model_class': RandomForestClassifier,
         'hyperparameters': {'n_estimators': 128, 'random_state': 20241127},
@@ -54,11 +60,6 @@ SELECTORS = {
         'hyperparameters': {'model_class': RandomForestClassifier, 'n_member': 9, 'n_estimators': 128, 'random_state': 20241127},
         'randomized': True,
         'name': r'$\mathtt{RFu}$',
-    },
-    'ensemble': {
-        'model_class': VotingClassifier,
-        'hyperparameters': {'estimators': [('lr', LogisticRegression(max_iter=1000)), ('rf', RandomForestClassifier(n_estimators=128, random_state=20241127)), ('svm', SVC(random_state=20241127))], 'n_jobs': 3},
-        'name': r'$\mathtt{Ens}$',
     },
 }
 
@@ -255,7 +256,7 @@ def main():
         
         fint_name = dsh['fint']
         fcomp_name = dsh['fcomp']
-        compute_selector(ds_name, fint_name, fcomp_name, 'ensemble', ps)
+        compute_selector(ds_name, fint_name, fcomp_name, 'upsample_svm', ps)
 
     create_selector_table(ps)
 
