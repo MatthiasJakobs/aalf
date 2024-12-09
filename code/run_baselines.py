@@ -29,7 +29,7 @@ def _compute_individual(X_train, y_train, X_val, y_val, X_test, y_test, fcomp_pr
     prediction = X_test[..., -1]
     loss_rmse = rmse(y_test, prediction)
     loss_smape = smape(y_test, prediction)
-    results = results | {'mv_rmse': loss_rmse, 'mv_smape': loss_smape }
+    results = results | {'lv_rmse': loss_rmse, 'lv_smape': loss_smape }
 
     try:
         ade = ADE(random_state)
