@@ -12,6 +12,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
 from sklearn.neural_network import MLPClassifier
 from os import makedirs
 from models import RandomSelector, UpsampleEnsembleClassifier
@@ -59,6 +60,18 @@ SELECTORS = {
         'hyperparameters': {'model_class': RandomForestClassifier, 'n_member': 9, 'n_estimators': 128, 'random_state': 20241127},
         'randomized': True,
         'name': r'$\mathtt{RFu}$',
+    },
+    'svm': {
+        'model_class': SVC,
+        'hyperparameters': {'random_state': 20241127},
+        'randomized': True,
+        'name': r'$\mathtt{SVM}$',
+    },
+    'svm_balanced': {
+        'model_class': SVC,
+        'hyperparameters': {'class_weight': 'balanced', 'random_state': 20241127},
+        'randomized': True,
+        'name': r'$\mathtt{SVMb}$',
     },
 }
 

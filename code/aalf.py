@@ -7,6 +7,7 @@ from preprocessing import load_local_data, create_selector_features
 from config import DATASET_HYPERPARAMETERS, ALL_DATASETS
 from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier
+from models import UpsampleEnsembleClassifier
 from os import makedirs
 from utils import rmse, smape
 
@@ -21,7 +22,8 @@ class AALF:
         oracle = Oracle(self.p)
         s_star_val = oracle.get_labels(y_val, val_preds[0], val_preds[1])
 
-        sel = RandomForestClassifier(n_estimators=128, random_state=20241127)
+        #sel = RandomForestClassifier(n_estimators=128, random_state=20241127)
+        sel = UpsampleEnsembleClassifier(model_class=RandomForestClassifier, n_estimators=128, n_member=9, random_state=20241127)
         sel.fit(X_val, s_star_val)
         selection = sel.predict(X_test).astype(np.int8)
 
@@ -42,11 +44,11 @@ def _run_single(p, X_train, y_train, X_val, y_val, X_test, y_test, fcomp_preds_t
     loss_rmse = rmse(y_test, prediction)
     loss_smape = smape(y_test, prediction)
     _p = np.mean(selection)
-    results = {'aalf_rmse': loss_rmse, 'aalf_smape': loss_smape, 'aalf_p': _p, 'true_p': p}
+    results = {'aalf_rmse': loss_rmse, 'aalf_smape': loss_smape, 'aalf_p': _p}
 
     return results
 
-def run(ds_name, p, debug=False):
+def run(ds_name, debug=False):
     # Load dataset hyperparameters
     dsh = DATASET_HYPERPARAMETERS[ds_name] 
     L = dsh['L']
@@ -70,49 +72,49 @@ def run(ds_name, p, debug=False):
     fcomp_val_preds = preds['val'][fcomp_name]
     fcomp_test_preds = preds['test'][fcomp_name]
 
-    # Run selections
-    if not debug:
-        from joblib import Parallel, delayed
-        result = Parallel(n_jobs=-1, backend='loky')(delayed(_run_single)(
-            p=p,
-            X_train=local_X_train[ds_index],
-            y_train=local_y_train[ds_index],
-            X_val=local_X_val[ds_index],
-            X_test=local_X_test[ds_index],
-            y_val=local_y_val[ds_index],
-            y_test=local_y_test[ds_index],
-            fint_preds_train=fint_train_preds[ds_index],
-            fint_preds_val=fint_val_preds[ds_index],
-            fint_preds_test=fint_test_preds[ds_index],
-            fcomp_preds_train=fcomp_train_preds[ds_index],
-            fcomp_preds_val=fcomp_val_preds[ds_index],
-            fcomp_preds_test=fcomp_test_preds[ds_index],
-            ) for ds_index in tqdm.trange(n_datapoints, desc=f'[{ds_name} - {p}]'))
-    else:
-        result = [_run_single(
-            p=p,
-            X_train=local_X_train[ds_index],
-            y_train=local_y_train[ds_index],
-            X_val=local_X_val[ds_index],
-            X_test=local_X_test[ds_index],
-            y_val=local_y_val[ds_index],
-            y_test=local_y_test[ds_index],
-            fint_preds_train=fint_train_preds[ds_index],
-            fint_preds_val=fint_val_preds[ds_index],
-            fint_preds_test=fint_test_preds[ds_index],
-            fcomp_preds_train=fcomp_train_preds[ds_index],
-            fcomp_preds_val=fcomp_val_preds[ds_index],
-            fcomp_preds_test=fcomp_test_preds[ds_index],
-            ) for ds_index in tqdm.trange(n_datapoints, desc=f'[{ds_name} - {p} - DBG]')]
+    for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
+        # Run selections
+        if not debug:
+            from joblib import Parallel, delayed
+            result = Parallel(n_jobs=-1, backend='loky')(delayed(_run_single)(
+                p=p,
+                X_train=local_X_train[ds_index],
+                y_train=local_y_train[ds_index],
+                X_val=local_X_val[ds_index],
+                X_test=local_X_test[ds_index],
+                y_val=local_y_val[ds_index],
+                y_test=local_y_test[ds_index],
+                fint_preds_train=fint_train_preds[ds_index],
+                fint_preds_val=fint_val_preds[ds_index],
+                fint_preds_test=fint_test_preds[ds_index],
+                fcomp_preds_train=fcomp_train_preds[ds_index],
+                fcomp_preds_val=fcomp_val_preds[ds_index],
+                fcomp_preds_test=fcomp_test_preds[ds_index],
+                ) for ds_index in tqdm.trange(n_datapoints, desc=f'[{ds_name} - {p}]'))
+        else:
+            result = [_run_single(
+                p=p,
+                X_train=local_X_train[ds_index],
+                y_train=local_y_train[ds_index],
+                X_val=local_X_val[ds_index],
+                X_test=local_X_test[ds_index],
+                y_val=local_y_val[ds_index],
+                y_test=local_y_test[ds_index],
+                fint_preds_train=fint_train_preds[ds_index],
+                fint_preds_val=fint_val_preds[ds_index],
+                fint_preds_test=fint_test_preds[ds_index],
+                fcomp_preds_train=fcomp_train_preds[ds_index],
+                fcomp_preds_val=fcomp_val_preds[ds_index],
+                fcomp_preds_test=fcomp_test_preds[ds_index],
+                ) for ds_index in tqdm.trange(n_datapoints, desc=f'[{ds_name} - {p} - DBG]')]
 
-    result = pd.DataFrame(result)
-    makedirs('results/aalf', exist_ok=True)
-    result.to_csv(f'results/aalf/{ds_name}_{p}.csv')
+        result = pd.DataFrame(result)
+        makedirs('results/aalf', exist_ok=True)
+        result.to_csv(f'results/aalf/{ds_name}_{p}.csv')
 
 def main():
     for ds_name in ALL_DATASETS:
-        for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
-            run(ds_name, p=p, debug=False)
+        run(ds_name, debug=False)
 
 if __name__ == '__main__':
     main()
