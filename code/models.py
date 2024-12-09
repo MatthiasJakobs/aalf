@@ -36,7 +36,10 @@ class UpsampleEnsembleClassifier:
             self.estimators[i].fit(_x, _y)
 
     def predict_proba(self, X):
-        preds = np.concatenate([self.estimators[i].predict_proba(X)[:, 1].reshape(1, -1) for i in range(self.n_member)], axis=0)
+        try:
+            preds = np.concatenate([self.estimators[i].predict_proba(X)[:, 1].reshape(1, -1) for i in range(self.n_member)], axis=0)
+        except Exception:
+            preds = np.vstack([self.estimators[i].predict(X) for i in range(self.n_member)])
         return preds.mean(axis=0), preds.std(axis=0)
 
     def predict(self, X, thresh=0.5):
