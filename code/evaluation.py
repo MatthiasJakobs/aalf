@@ -206,10 +206,9 @@ def generate_latex_table():
         f.write(latex_output)
 
 def main():
-    # for ds_name in ALL_DATASETS:
-    #     evaluate_models(ds_name, verbose=True)
-    #evaluate_models('kdd_cup_nomissing', verbose=True)
-    # generate_cdd_plot(loss_fn='rmse')
+    for ds_name in ALL_DATASETS:
+        evaluate_models(ds_name, verbose=True)
+    generate_cdd_plot(loss_fn='rmse')
     generate_latex_table()
 
 if __name__ == '__main__':

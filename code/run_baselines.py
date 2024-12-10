@@ -201,8 +201,8 @@ def calc_cdd():
 
 
 def main():
-    # for ds_name in ALL_DATASETS:
-    #     compute_baselines(ds_name, debug=False)
+    for ds_name in ALL_DATASETS:
+        compute_baselines(ds_name, debug=False)
 
     calc_cdd()
 

@@ -6,7 +6,7 @@ from utils import rmse
 from sklearn.linear_model import LinearRegression
 from preprocessing import load_global_data, load_local_data
 from seedpy import fixedseed
-from config import DATASET_HYPERPARAMETERS, DEEPAR_HYPERPARAMETERS, FCN_HYPERPARAMETERS, CNN_HYPERPARAMETERS
+from config import DATASET_HYPERPARAMETERS, DEEPAR_HYPERPARAMETERS, FCN_HYPERPARAMETERS, CNN_HYPERPARAMETERS, ALL_DATASETS
 from os import makedirs
 from tsx.utils import string_to_randomstate
 from models import DeepAR, DeepVAR, FCNN, GlobalTorchDataset, CNN
@@ -123,30 +123,10 @@ def fit_deepar(ds_name):
     print('deepar', np.mean(losses))
 
 def main():
-    # fit_deepar('weather')
-    # fit_deepar('nn5_daily_nomissing')
-    # fit_deepar('australian_electricity_demand')
-    # fit_deepar('pedestrian_counts')
-    # fit_deepar('kdd_cup_nomissing')
-    # fit_deepar('nn5_weekly')
-
-    # fit_fcnn('weather')
-    # fit_fcnn('nn5_daily_nomissing')
-    # fit_fcnn('australian_electricity_demand')
-    # fit_fcnn('pedestrian_counts')
-    # fit_fcnn('kdd_cup_nomissing')
-    # fit_fcnn('nn5_weekly')
-
-    # fit_cnn('kdd_cup_nomissing')
-    # fit_cnn('pedestrian_counts')
-    # fit_cnn('australian_electricity_demand')
-    # fit_cnn('weather')
-    # fit_cnn('nn5_daily_nomissing')
-    # fit_cnn('nn5_weekly')
-
-    fit_deepar('solar_10_minutes')
-    fit_cnn('solar_10_minutes')
-    fit_fcnn('solar_10_minutes')
+    for ds_name in ALL_DATASETS:
+        fit_fcnn(ds_name)
+        fit_deepar(ds_name)
+        fit_cnn(ds_name)
 
 if __name__ == '__main__':
     main()

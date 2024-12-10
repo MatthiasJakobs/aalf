@@ -163,6 +163,6 @@ def plot_comparison_aalf_with_baselines():
     fig.savefig('plots/scatter.pdf', bbox_inches='tight')
 
 if __name__ == '__main__':
-    # plot_loss_floor()
-    # plot_optimum_example()
+    plot_loss_floor()
+    plot_optimum_example()
     plot_comparison_aalf_with_baselines()

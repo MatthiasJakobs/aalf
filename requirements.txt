@@ -7,5 +7,6 @@ seedpy
 scipy
 joblib
 seedpy
-git+https://github.com/MatthiasJakobs/tsx@dev
+torch
+git+https://github.com/MatthiasJakobs/tsx@dami
 git+https://github.com/mirkobunse/critdd
