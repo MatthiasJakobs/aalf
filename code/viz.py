@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from selection import Oracle
 from utils import rmse
 from plotz import default_plot, COLORS
-from config import DS_MAP, ALL_DATASETS
+from config import DS_MAP, ALL_DATASETS, DATASET_HYPERPARAMETERS
 
 def plot_oracle_line(ax, ys, fint_preds, fcomp_preds, loss_fn=None, color=COLORS.blue, label=''):
 
@@ -97,7 +97,72 @@ def plot_optimum_example():
     fig.tight_layout()
     fig.savefig('plots/optimum_example.pdf', bbox_inches='tight')
 
+def plot_comparison_aalf_with_baselines():
+    CMAP = {
+        'ade': COLORS.green,
+        'dets': COLORS.yellow,
+        'knnroc': COLORS.brown,
+        'omsroc': COLORS.pink,
+    }
+    BLMAP = {
+        'ade': 'ADE',
+        'dets': 'DETS',
+        'knnroc': 'KNN-RoC',
+        'omsroc': 'OMS-RoC',
+    }
+    
+
+    fig, axs = default_plot(subplots=(3,2), height_fraction=1)
+    axs = axs.ravel()
+    ds_names = ALL_DATASETS
+    for idx, ds_name in enumerate(ds_names):
+
+        dsh = DATASET_HYPERPARAMETERS[ds_name]
+
+        losses = pd.read_csv(f'results/basemodel_losses/{ds_name}.csv', index_col=0)
+        losses = losses[['linear_rmse', 'fcnn_rmse', 'deepar_rmse', 'cnn_rmse']]
+        losses = losses.rename({'linear_rmse': 'linear', 'fcnn_rmse': 'fcnn', 'deepar_rmse': 'deepar', 'cnn_rmse': 'cnn'}, axis=1).mean()
+
+        # Plot single models
+        axs[idx].scatter(1, losses[dsh['fint']], color=COLORS.blue, marker='x', s=20, label='$f$' if idx == 0 else '')
+        axs[idx].scatter(0, losses[dsh['fcomp']], color=COLORS.red, marker='x', s=20, label='$g$' if idx == 0 else '')
+
+        # Plot AALF
+        for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
+            aalf = pd.read_csv(f'results/aalf/{ds_name}_{p}.csv', index_col=0)
+            mean_error = aalf['aalf_rmse'].mean()
+            std_error = aalf['aalf_rmse'].std()
+            mean_selection = aalf['aalf_p'].mean()
+            std_selection = aalf['aalf_p'].std()
+            #axs[idx].errorbar(mean_selection, mean_error, xerr=std_selection, yerr=std_error, color=COLORS.violet, label='AALF' if idx == 0 and p == 0.5 else '')
+            axs[idx].scatter(mean_selection, mean_error, color=COLORS.violet, marker='*', s=20, label='AALF' if idx == 0 and p == 0.5 else '')
+
+        # Plot baselines
+        baselines = pd.read_csv(f'results/baseline_selectors/{ds_name}.csv', index_col=0)
+        for baseline_name in CMAP.keys():
+            mean_error = baselines[f'{baseline_name}_rmse'].mean()
+            std_error = baselines[f'{baseline_name}_rmse'].std()
+            mean_selection = baselines[f'{baseline_name}_p'].mean()
+            std_selection = baselines[f'{baseline_name}_p'].std()
+
+            #axs[idx].errorbar(mean_selection, mean_error, xerr=std_selection, yerr=std_error, color=CMAP[baseline_name], label=BLMAP[baseline_name] if idx == 0 else '')
+            axs[idx].scatter(mean_selection, mean_error, color=CMAP[baseline_name], s=20, label=BLMAP[baseline_name] if idx == 0 else '')
+
+        # Plot single models again (to make sure they are in the foreground) (and that their legend entry is still in the beginning)
+        axs[idx].scatter(1, losses[dsh['fint']], color=COLORS.blue, marker='x', s=20)
+        axs[idx].scatter(0, losses[dsh['fcomp']], color=COLORS.red, marker='x', s=20)
+
+        # Housekeeping
+        axs[idx].set_xlim(0-0.05, 1+0.05)
+        axs[idx].set_title(DS_MAP[ds_name])
+        axs[idx].set_ylabel('RMSE')
+        axs[idx].set_xlabel(r'$p=B/T$')
+
+    fig.legend(ncols=7, loc='center', columnspacing=1.0, handletextpad=0.4, bbox_to_anchor=(0.5, -0.01))
+    fig.tight_layout()
+    fig.savefig('plots/scatter.pdf', bbox_inches='tight')
 
 if __name__ == '__main__':
-    plot_loss_floor()
-    plot_optimum_example()
+    # plot_loss_floor()
+    # plot_optimum_example()
+    plot_comparison_aalf_with_baselines()

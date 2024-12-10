@@ -193,13 +193,14 @@ def generate_latex_table():
     df = df.apply(format_significant, axis=1)
     df = df.apply(highlight_min_multicolumn, metric_names=loss_function_names, axis=1)
 
-    df = df.transpose()
+    #df = df.transpose()
 
     latex_output = df.to_latex(
         multirow=False,
         escape=False, 
         multicolumn_format='l',
-        column_format=r'llp{2cm}p{1.0cm}p{1.0cm}p{1.3cm}p{1.0cm}p{1.0cm}',
+        #column_format=r'llp{2cm}p{1.0cm}p{1.0cm}p{1.3cm}p{1.0cm}p{1.0cm}',
+        column_format=r'p{2.5cm}p{0.75cm}p{0.85cm}p{0.75cm}p{0.85cm}p{0.75cm}p{0.85cm}p{0.75cm}p{0.85cm}',
     )
     with open(f'plots/single_results.tex', 'w') as f:
         f.write(latex_output)

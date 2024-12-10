@@ -154,6 +154,8 @@ def calc_cdd():
         'ade': r'$\textbf{ADE}$',
         'knnroc': r'$\textbf{KNN-RoC}$',
         'omsroc': r'$\textbf{OMS-RoC}$',
+        'lv': r'$\textbf{LastValue}$',
+        'mv': r'$\textbf{MeanValue}$',
     }
 
     result = None
@@ -162,8 +164,8 @@ def calc_cdd():
     for ds_name in ALL_DATASETS:
         # Baselines
         _result_baselines = pd.read_csv(f'results/baseline_selectors/{ds_name}.csv', index_col=0)
-        _result_baselines = _result_baselines[['ade_rmse', 'knnroc_rmse', 'omsroc_rmse', 'dets_rmse']]
-        _result_baselines = _result_baselines.rename(columns={'ade_rmse': 'ade', 'knnroc_rmse': 'knnroc', 'omsroc_rmse': 'omsroc', 'dets_rmse': 'dets'})
+        _result_baselines = _result_baselines[['ade_rmse', 'knnroc_rmse', 'omsroc_rmse', 'dets_rmse', 'lv_rmse', 'mv_rmse']]
+        _result_baselines = _result_baselines.rename(columns={'ade_rmse': 'ade', 'knnroc_rmse': 'knnroc', 'omsroc_rmse': 'omsroc', 'dets_rmse': 'dets', 'mv_rmse': 'mv', 'lv_rmse': 'lv'})
         # AALF
         _result_aalf = None
         for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
@@ -183,7 +185,7 @@ def calc_cdd():
             result = pd.concat([result, _result], ignore_index=True)
 
     # Create CDD
-    #result = result.iloc[:150]
+    #result = result.iloc[:50]
 
     diag = Diagram(
         result.to_numpy(),
@@ -199,10 +201,10 @@ def calc_cdd():
 
 
 def main():
-    for ds_name in ALL_DATASETS:
-        compute_baselines(ds_name, debug=False)
+    # for ds_name in ALL_DATASETS:
+    #     compute_baselines(ds_name, debug=False)
 
-    # calc_cdd()
+    calc_cdd()
 
 if __name__ == '__main__':
     main()
