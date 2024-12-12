@@ -195,14 +195,15 @@ def calc_cdd():
     diag.to_file(
         'plots/baseline_cdd.tex',
         axis_options = {
-            'width': 360,
+            'width': 300,
+            'ymin': -9.5,
         }
     )
 
 
 def main():
-    for ds_name in ALL_DATASETS:
-        compute_baselines(ds_name, debug=False)
+    # for ds_name in ALL_DATASETS:
+    #     compute_baselines(ds_name, debug=False)
 
     calc_cdd()
 
