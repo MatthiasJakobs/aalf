@@ -1,5 +1,5 @@
 # Almost Always Linear Forecasting (AALF)
-This code accompanies our ECML-PKDD 2025 journal track submission entitled **Almost Always Linear Forecasting (AALF)**.
+This code accompanies our journal submission entitled **Almost Always Linear Forecasting (AALF)**.
 
 # Installation 
 All experiments were done using Python 3.10.13.
