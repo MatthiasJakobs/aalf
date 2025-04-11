@@ -195,7 +195,8 @@ def calc_cdd():
     diag.to_file(
         'plots/baseline_cdd.tex',
         axis_options = {
-            'width': 360,
+            'width': 300,
+            'ymin': -9.5,
         }
     )
 

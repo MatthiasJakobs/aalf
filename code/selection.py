@@ -31,23 +31,11 @@ SELECTORS = {
         'hyperparameters': {'max_iter': 1000},
         'name': r'$\mathtt{LR}$',
     },
-    'upsample_logistic_regression': {
-        'model_class': UpsampleEnsembleClassifier,
-        'hyperparameters': {'model_class': LogisticRegression, 'n_member': 9, 'random_state': 20241127, 'max_iter': 1000},
-        'randomized': True,
-        'name': r'$\mathtt{LRu}$',
-    },
     'svm': {
         'model_class': SVC,
         'hyperparameters': {'random_state': 20241127},
         'randomized': True,
         'name': r'$\mathtt{SVM}$',
-    },
-    'upsample_svm': {
-        'model_class': UpsampleEnsembleClassifier,
-        'hyperparameters': {'model_class': SVC, 'n_member': 9, 'random_state': 20241127},
-        'randomized': True,
-        'name': r'$\mathtt{SVMu}$',
     },
     'random_forest_128': {
         'model_class': RandomForestClassifier,
@@ -256,7 +244,8 @@ def main():
         
         fint_name = dsh['fint']
         fcomp_name = dsh['fcomp']
-        compute_selector(ds_name, fint_name, fcomp_name, 'upsample_svm', ps)
+        for s_name in SELECTORS.keys():
+            compute_selector(ds_name, fint_name, fcomp_name, s_name, ps)
 
     create_selector_table(ps)
 

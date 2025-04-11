@@ -88,7 +88,7 @@ def plot_optimum_example():
     axs[1].grid(zorder=0)
     axs[1].bar(x=np.arange(len(y))[negatives], height=y[negatives], color=COLORS.blue, zorder=3)
     axs[1].bar(x=np.arange(len(y))[positives], height=y[positives], color=COLORS.red, zorder=3)
-    axs[1].axvline(x=B+0.51, color='grey', linestyle='--', alpha=0.5, lw=0.75, label=fr'$B={B+1}$')
+    axs[1].axvline(x=B+0.51, color='grey', linestyle='--', alpha=0.5, lw=0.75, label=fr'$B \geq {B+1}$')
     axs[1].set_xticks(ticks=np.arange(len(y)), labels=xlabel)
     axs[1].set_xlabel(fr'$\pi(t)$')
     axs[1].set_ylabel(fr'$\ell(\pi(t))$')
@@ -163,6 +163,6 @@ def plot_comparison_aalf_with_baselines():
     fig.savefig('plots/scatter.pdf', bbox_inches='tight')
 
 if __name__ == '__main__':
-    # plot_loss_floor()
-    # plot_optimum_example()
+    plot_loss_floor()
+    plot_optimum_example()
     plot_comparison_aalf_with_baselines()
