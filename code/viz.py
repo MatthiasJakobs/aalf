@@ -7,12 +7,12 @@ from utils import rmse
 from plotz import default_plot, COLORS
 from config import DS_MAP, ALL_DATASETS, DATASET_HYPERPARAMETERS
 
-def plot_oracle_line(ax, ys, fint_preds, fcomp_preds, loss_fn=None, color=COLORS.blue, label=''):
+def plot_oracle_line(ax, ys, fint_preds, fcomp_preds, loss_fn=None, color=COLORS.blue, label='', n=100):
 
     if loss_fn is None:
         loss_fn = rmse
 
-    ps = np.linspace(0.001, 0.999, num=100)
+    ps = np.linspace(0.001, 0.999, num=n)
     oracle_losses = []
     for p in ps:
         oracle = Oracle(p)
@@ -34,7 +34,7 @@ def plot_oracle_line(ax, ys, fint_preds, fcomp_preds, loss_fn=None, color=COLORS
     return ax
 
 def plot_loss_floor():
-    fig, axs = default_plot(subplots=(3,2), height_fraction=1.3)
+    fig, axs = default_plot(subplots=(3,2), height_fraction=1)
     axs = axs.ravel()
     ds_names = ALL_DATASETS
     for idx, ds_name in enumerate(ds_names):
@@ -46,14 +46,14 @@ def plot_loss_floor():
         losses = losses.rename({'linear_rmse': 'linear', 'fcnn_rmse': 'fcnn', 'deepar_rmse': 'deepar', 'cnn_rmse': 'cnn'}, axis=1).mean()
 
         # Plot both oracles
-        axs[idx].scatter(0, losses['fcnn'], color=COLORS.green, marker='x', s=20, label='FCNN' if idx == 0 else '')
-        axs[idx].scatter(0, losses['deepar'], color=COLORS.red, marker='x', s=20, label='DeepAR' if idx == 0 else '')
-        axs[idx].scatter(0, losses['cnn'], color=COLORS.orange, marker='x', s=20, label='CNN' if idx == 0 else '')
-        axs[idx].scatter(1, losses['linear'], color=COLORS.blue, marker='x', s=20, label='AR' if idx == 0 else '')
+        axs[idx].scatter(0, losses['fcnn'], color=COLORS.green, marker='x', s=20, label=r'\texttt{FCNN}' if idx == 0 else '')
+        axs[idx].scatter(0, losses['deepar'], color=COLORS.red, marker='x', s=20, label=r'\texttt{DeepAR}' if idx == 0 else '')
+        axs[idx].scatter(0, losses['cnn'], color=COLORS.orange, marker='x', s=20, label=r'\texttt{CNN}' if idx == 0 else '')
+        axs[idx].scatter(1, losses['linear'], color=COLORS.blue, marker='x', s=20, label=r'\texttt{AR}' if idx == 0 else '')
 
-        axs[idx] = plot_oracle_line(axs[idx], ys=preds['test']['y'], fint_preds=preds['test']['linear'], fcomp_preds=preds['test']['fcnn'], color=COLORS.green, label=r'$\mathcal{O}(\text{AR},\text{FCNN})$' if idx == 0 else '')
-        axs[idx] = plot_oracle_line(axs[idx], ys=preds['test']['y'], fint_preds=preds['test']['linear'], fcomp_preds=preds['test']['deepar'], color=COLORS.red, label=r'$\mathcal{O}(\text{AR},\text{DeepAR})$' if idx == 0 else '')
-        axs[idx] = plot_oracle_line(axs[idx], ys=preds['test']['y'], fint_preds=preds['test']['linear'], fcomp_preds=preds['test']['cnn'], color=COLORS.orange, label=r'$\mathcal{O}(\text{AR},\text{CNN})$' if idx == 0 else '')
+        axs[idx] = plot_oracle_line(axs[idx], ys=preds['test']['y'], fint_preds=preds['test']['linear'], fcomp_preds=preds['test']['fcnn'], color=COLORS.green, label=r'$S(\texttt{AR},\texttt{FCNN})$' if idx == 0 else '')
+        axs[idx] = plot_oracle_line(axs[idx], ys=preds['test']['y'], fint_preds=preds['test']['linear'], fcomp_preds=preds['test']['deepar'], color=COLORS.red, label=r'$S(\texttt{AR},\texttt{DeepAR})$' if idx == 0 else '')
+        axs[idx] = plot_oracle_line(axs[idx], ys=preds['test']['y'], fint_preds=preds['test']['linear'], fcomp_preds=preds['test']['cnn'], color=COLORS.orange, label=r'$S(\texttt{AR},\texttt{CNN})$' if idx == 0 else '')
         axs[idx].set_title(DS_MAP[ds_name])
 
     fig.legend(ncols=7, loc='center', columnspacing=1.0, handletextpad=0.4, bbox_to_anchor=(0.5, -0.01))
@@ -105,10 +105,10 @@ def plot_comparison_aalf_with_baselines():
         'omsroc': COLORS.pink,
     }
     BLMAP = {
-        'ade': 'ADE',
-        'dets': 'DETS',
-        'knnroc': 'KNN-RoC',
-        'omsroc': 'OMS-RoC',
+        'ade': r'\texttt{ADE}',
+        'dets': r'\texttt{DETS}',
+        'knnroc': r'\texttt{KNN-RoC}',
+        'omsroc': r'\texttt{OMS-RoC}',
     }
     
 
@@ -163,6 +163,6 @@ def plot_comparison_aalf_with_baselines():
     fig.savefig('plots/scatter.pdf', bbox_inches='tight')
 
 if __name__ == '__main__':
-    plot_loss_floor()
-    plot_optimum_example()
+    # plot_loss_floor()
+    # plot_optimum_example()
     plot_comparison_aalf_with_baselines()

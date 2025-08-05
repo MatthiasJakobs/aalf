@@ -8,5 +8,7 @@ scipy
 joblib
 seedpy
 torch
+sktime
 git+https://github.com/MatthiasJakobs/tsx@dami
 git+https://github.com/mirkobunse/critdd
+git+https://github.com/MatthiasJakobs/plotz
