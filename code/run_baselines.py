@@ -10,7 +10,7 @@ from tsx.utils import string_to_randomstate
 from utils import smape, rmse
 from os import makedirs
 from config import ALL_DATASETS
-from critdd import Diagram
+from critdd import Diagrams
 
 def _compute_individual(X_train, y_train, X_val, y_val, X_test, y_test, fcomp_preds_val, fcomp_preds_test, fint_preds_val, fint_preds_test, random_state=None):
     # TODO: Provide the same input data as in AALF
@@ -185,19 +185,38 @@ def calc_cdd():
             result = pd.concat([result, _result], ignore_index=True)
 
     # Create CDD
-    #result = result.iloc[:50]
+    #result = result.sample(n=500)
 
-    diag = Diagram(
-        result.to_numpy(),
+    diag = Diagrams(
+        [result.to_numpy()],
+        diagram_names=[' '],
         treatment_names=[METHOD_NAMES.get(s, s) for s in result.columns],
         maximize_outcome=False
     )
     diag.to_file(
-        'plots/baseline_cdd.tex',
-        axis_options = {
-            'width': 300,
-            'ymin': -9.5,
-        }
+        #'plots/baseline_cdd.tex',
+        'plots/baseline_cdd_new.tex',
+        axis_options = { # style the plot
+            "cycle list": ",".join([ # define the markers for treatments
+                r"{color={rgb,255:red,152;green,78;blue,163},thick,mark=x,mark options={scale=2}}",
+                r"{color={rgb,255:red,152;green,78;blue,163},thick,mark=square,mark options={scale=1.5}}",
+                r"{color={rgb,255:red,152;green,78;blue,163},thick,mark=triangle,mark options={scale=2.25}}",
+                r"{color={rgb,255:red,152;green,78;blue,163},thick,mark=diamond,mark options={scale=1.75}}",
+                r"{color={rgb,255:red,152;green,78;blue,163},thick,mark=star,mark options={scale=2}}",
+                r"{color={rgb,255:red,152;green,78;blue,163},thick,mark=o,mark options={scale=2}}",
+                r"{color={rgb,255:red,53;green,205;blue,180},thick, mark=o,mark options={scale=2}}",
+                r"{color={rgb,255:red,166;green,86;blue,40},thick, mark=o,mark options={scale=2}}",
+                r"{color={rgb,255:red,247;green,129;blue,191},thick, mark=o,mark options={scale=2}}",
+                r"{color={rgb,255:red,255;green,188;blue,41},thick, mark=o,mark options={scale=2}}",
+                r"{blue,mark=o,thick, mark options={scale=2}}",
+                r"{red,mark=o,thick, mark options={scale=2}}",
+            ]),
+            'width': '400', # should be 372 but axis labels are not considered
+            'height': r'0.4*\axisdefaultheight',
+            'xticklabel style': r'font=\fontsize{6}{6}\selectfont',
+            'yticklabel style': r'font=\fontsize{6}{6}\selectfont, align=right',
+            'legend style': r'at={(0.96, -0.25)}, font=\fontsize{6}{6}\selectfont,/tikz/every column/.append style={column sep=10ex}, legend columns=6',
+        },
     )
 
 
