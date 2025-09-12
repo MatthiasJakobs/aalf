@@ -6,7 +6,8 @@ class objectview(object):
         self.__dict__ = d
 
 WIDTH_MAP = {
-    'lncsjournal': 372
+    'lncsjournal': 372,
+    'beamer-lamarr': 419.24408
 }
 
 COLORMAP = ['#E41A1C','#377eb8','#984ea3','#ff7f00','#cccc33','#f781bf','#4daf4a', '#a65628']
