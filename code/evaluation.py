@@ -7,13 +7,22 @@ import tqdm
 
 from sklearn.linear_model import LinearRegression
 from config import DATASET_HYPERPARAMETERS
-from utils import highlight_min_multicolumn, format_significant
-from preprocessing import load_local_data, load_global_data
+from utils import highlight_min_multicolumn, format_significant, rmse, smape
+from preprocessing import load_local_data, load_global_data, _load_data
 from os import makedirs
 from os.path import exists
 from critdd import Diagrams
 from config import ALL_DATASETS, DS_MAP, MODEL_MAP, LOSS_MAP
 from itertools import product
+from sktime.forecasting.ets import AutoETS
+
+import warnings
+
+warnings.filterwarnings(
+    'ignore',
+    message='.*AutoETS can not accept new data when update_params=False.*',
+    category=UserWarning
+)
 
 class CPU_Unpickler(pickle.Unpickler):
     def find_class(self, module, name):
@@ -26,7 +35,7 @@ def evaluate_models(ds_name, verbose=False):
     L = dsh['L']
     freq = dsh['freq']
     loss_fn_names = ['rmse', 'smape']
-    model_names = ['linear', 'fcnn', 'deepar', 'cnn']
+    model_names = ['linear', 'autoets', 'fcnn', 'deepar', 'cnn']
 
     all_loss_values = {f'{m_name}_{loss_name}': [] for m_name, loss_name in product(model_names, loss_fn_names)}
     all_train_predictions = {m_name: [] for m_name in model_names + ['y']}
@@ -34,28 +43,50 @@ def evaluate_models(ds_name, verbose=False):
     all_test_predictions = {m_name: [] for m_name in model_names + ['y']}
 
     # Linear model
+    X_train, _, _ = _load_data(ds_name, return_start_dates=False)
     (local_X_train, local_y_train), (local_X_val, local_y_val), (local_X_test, local_y_test) = load_local_data(ds_name, L=L, H=1, return_split=['train', 'val', 'test'], verbose=verbose)
     for ds_index in tqdm.trange(len(local_X_train), desc='process local models'):
-        m = LinearRegression()
-        m.fit(local_X_train[ds_index], local_y_train[ds_index])
+        lin = LinearRegression()
+        ets = AutoETS(auto=True, additive_only=True, n_jobs=-1, random_state=1234)
+        for m_name, m in zip(['autoets', 'linear'], [ets, lin]):
+            if m_name == 'linear':
+                m.fit(local_X_train[ds_index], local_y_train[ds_index])
+                train_preds = m.predict(local_X_train[ds_index]).reshape(local_y_train[ds_index].shape)
+                val_preds = m.predict(local_X_val[ds_index]).reshape(local_y_val[ds_index].shape)
+                test_preds = m.predict(local_X_test[ds_index]).reshape(local_y_test[ds_index].shape)
+            elif m_name == 'autoets':
+                ets = AutoETS(auto=True, additive_only=True)
+                ets.fit(X_train[ds_index].squeeze())
+                train_preds = np.zeros_like(local_y_train[ds_index])
+                val_preds = np.zeros_like(local_y_val[ds_index])
+                test_preds = np.zeros_like(local_y_test[ds_index])
+                for i, x_true in enumerate(local_X_train[ds_index]):
+                    ets.update(x_true, update_params=False)
+                    pred = ets.predict(fh=[1]).squeeze()
+                    train_preds[i] = pred
+                for i, x_true in enumerate(local_X_val[ds_index]):
+                    ets.update(x_true, update_params=False)
+                    pred = ets.predict(fh=[1]).squeeze()
+                    val_preds[i] = pred
+                for i, x_true in enumerate(local_X_test[ds_index]):
+                    ets.update(x_true, update_params=False)
+                    pred = ets.predict(fh=[1]).squeeze()
+                    test_preds[i] = pred
 
-        train_preds = m.predict(local_X_train[ds_index]).reshape(local_y_train[ds_index].shape)
-        val_preds = m.predict(local_X_val[ds_index]).reshape(local_y_val[ds_index].shape)
-        test_preds = m.predict(local_X_test[ds_index]).reshape(local_y_test[ds_index].shape)
+            all_train_predictions[m_name].append(train_preds.squeeze())
+            all_train_predictions['y'].append(local_y_train[ds_index].squeeze())
+            all_val_predictions[m_name].append(val_preds.squeeze())
+            all_val_predictions['y'].append(local_y_val[ds_index].squeeze())
+            all_test_predictions[m_name].append(test_preds.squeeze())
+            all_test_predictions['y'].append(local_y_test[ds_index].squeeze())
 
-        all_train_predictions['linear'].append(train_preds.squeeze())
-        all_train_predictions['y'].append(local_y_train[ds_index].squeeze())
-        all_val_predictions['linear'].append(val_preds.squeeze())
-        all_val_predictions['y'].append(local_y_val[ds_index].squeeze())
-        all_test_predictions['linear'].append(test_preds.squeeze())
-        all_test_predictions['y'].append(local_y_test[ds_index].squeeze())
-
-        for loss_fn in loss_fn_names:
-            loss = eval(loss_fn)(test_preds.squeeze(), local_y_test[ds_index].squeeze())
-            all_loss_values[f'linear_{loss_fn}'].append(loss)
+            for loss_fn in loss_fn_names:
+                loss = eval(loss_fn)(test_preds.squeeze(), local_y_test[ds_index].squeeze())
+                all_loss_values[f'{m_name}_{loss_fn}'].append(loss)
 
     n_ts = len(local_X_train)
     del local_X_train, local_y_train, local_X_val, local_y_val, local_X_test, local_y_test
+    del X_train
 
     # Load global models
     with open(f'models/{ds_name}/deepar.pickle', 'rb') as f:
@@ -204,10 +235,11 @@ def generate_latex_table():
         f.write(latex_output)
 
 def main():
-    for ds_name in ALL_DATASETS:
-        evaluate_models(ds_name, verbose=True)
-    generate_cdd_plot(loss_fn='rmse')
-    generate_latex_table()
+    # for ds_name in ALL_DATASETS:
+    #     evaluate_models(ds_name, verbose=True)
+    # generate_cdd_plot(loss_fn='rmse')
+    # generate_latex_table()
+    evaluate_models('nn5_daily_nomissing', verbose=True)
 
 if __name__ == '__main__':
     main()

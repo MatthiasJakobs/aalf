@@ -7,8 +7,10 @@ seedpy
 scipy
 joblib
 seedpy
+--index-url https://download.pytorch.org/whl/cpu
 torch
 sktime
 git+https://github.com/MatthiasJakobs/tsx@dami
 git+https://github.com/mirkobunse/critdd
 git+https://github.com/MatthiasJakobs/plotz
+pmdarima
