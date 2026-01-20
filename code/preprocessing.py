@@ -107,23 +107,10 @@ def load_local_data(ds_name, L, H, return_split=None, verbose=True):
 
     return (_x_train, _y_train), (_x_val, _y_val), (_x_test, _y_test)
 
-def load_global_data(ds_name, L, H, freq, return_split=None, verbose=True):
+def load_global_data(ds_name, L, H, freq):
     _X_train, _X_val, _X_test, start_dates = _load_data(ds_name, return_start_dates=True)
 
-    train_data_X = []
-    val_data_X = []
-    test_data_X = []
-    train_data_y = []
-    val_data_y = []
-    test_data_y = []
-
-    if return_split is None:
-        return_split = ['train', 'val', 'test']
-    else:
-        if isinstance(return_split, str):
-            return_split = [return_split]
-
-    for ds_index in tqdm.trange(len(_X_train), desc=f'[{ds_name}] get global data', disable=(not verbose)):
+    for ds_index in range(len(_X_train)):
         # Create entire TS again for covariate generation
         X_train = _X_train[ds_index]
         X_val = _X_val[ds_index]
@@ -137,37 +124,25 @@ def load_global_data(ds_name, L, H, freq, return_split=None, verbose=True):
         if val_length <= L+H:
             continue
 
-        if 'train' in return_split:
-            C_train = covariates[:train_length]
-            x_train, y_train = windowing(X_train, L=L, H=H)
-            c_train, _ = windowing(C_train, L=L, H=H)
-            x_train = np.atleast_3d(x_train)
-            x_train = np.concatenate([x_train, c_train], axis=-1)
-            train_data_X.append(x_train)
-            train_data_y.append(y_train)
-        if 'val' in return_split:
-            C_val = covariates[train_length:train_length+val_length]
-            x_val, y_val = windowing(X_val, L=L, H=H)
-            c_val, _ = windowing(C_val, L=L, H=H)
-            x_val = np.atleast_3d(x_val)
-            x_val = np.concatenate([x_val, c_val], axis=-1)
-            val_data_y.append(y_val)
-            val_data_X.append(x_val)
+        C_train = covariates[:train_length]
+        x_train, y_train = windowing(X_train, L=L, H=H)
+        c_train, _ = windowing(C_train, L=L, H=H)
+        x_train = np.atleast_3d(x_train)
+        x_train = np.concatenate([x_train, c_train], axis=-1)
 
-        if 'test' in return_split:
-            C_test = covariates[train_length+val_length:]
-            x_test, y_test = windowing(X_test, L=L, H=H)
-            c_test, _ = windowing(C_test, L=L, H=H)
-            x_test = np.atleast_3d(x_test)
-            x_test = np.concatenate([x_test, c_test], axis=-1)
-            test_data_X.append(x_test)
-            test_data_y.append(y_test)
+        C_val = covariates[train_length:train_length+val_length]
+        x_val, y_val = windowing(X_val, L=L, H=H)
+        c_val, _ = windowing(C_val, L=L, H=H)
+        x_val = np.atleast_3d(x_val)
+        x_val = np.concatenate([x_val, c_val], axis=-1)
 
-    # if 'train' in return_split:
-    #     train_data_X = np.concatenate(train_data_X)
-    #     train_data_y = np.concatenate(train_data_y)
+        C_test = covariates[train_length+val_length:]
+        x_test, y_test = windowing(X_test, L=L, H=H)
+        c_test, _ = windowing(C_test, L=L, H=H)
+        x_test = np.atleast_3d(x_test)
+        x_test = np.concatenate([x_test, c_test], axis=-1)
 
-    return (train_data_X, train_data_y), (val_data_X, val_data_y), (test_data_X, test_data_y)
+        yield (x_train, y_train, x_val, y_val, x_test, y_test)
 
 def _get_last_errors(fint_preds_val, fcomp_preds_val, y_val, fint_preds_test, fcomp_preds_test, y_test):
     last_preds_fint = np.concatenate([fint_preds_val[-1].reshape(-1), fint_preds_test[:-1].reshape(-1)])

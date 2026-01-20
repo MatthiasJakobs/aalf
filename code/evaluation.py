@@ -3,17 +3,17 @@ import torch
 import numpy as np
 import pandas as pd
 import io
+import tqdm
 
 from sklearn.linear_model import LinearRegression
 from config import DATASET_HYPERPARAMETERS
-from utils import highlight_min_multicolumn, rmse, smape, format_significant
+from utils import highlight_min_multicolumn, format_significant
 from preprocessing import load_local_data, load_global_data
 from os import makedirs
 from os.path import exists
 from critdd import Diagrams
 from config import ALL_DATASETS, DS_MAP, MODEL_MAP, LOSS_MAP
 from itertools import product
-from plotz import COLORS
 
 class CPU_Unpickler(pickle.Unpickler):
     def find_class(self, module, name):
@@ -28,73 +28,71 @@ def evaluate_models(ds_name, verbose=False):
     loss_fn_names = ['rmse', 'smape']
     model_names = ['linear', 'fcnn', 'deepar', 'cnn']
 
-    (local_X_train, local_y_train), (local_X_val, local_y_val), (local_X_test, local_y_test) = load_local_data(ds_name, L=L, H=1, return_split=['train', 'val', 'test'], verbose=verbose)
-    (global_X_train, global_y_train), (global_X_val, global_y_val), (global_X_test, global_y_test) = load_global_data(ds_name, L=L, H=1, freq=freq, return_split=['train', 'val', 'test'], verbose=verbose)
-
     all_loss_values = {f'{m_name}_{loss_name}': [] for m_name, loss_name in product(model_names, loss_fn_names)}
     all_train_predictions = {m_name: [] for m_name in model_names + ['y']}
     all_val_predictions = {m_name: [] for m_name in model_names + ['y']}
     all_test_predictions = {m_name: [] for m_name in model_names + ['y']}
 
-    for m_name in model_names:
-        if m_name == 'linear':
-            for ds_index in range(len(local_X_train)):
-                m = LinearRegression()
-                m.fit(local_X_train[ds_index], local_y_train[ds_index])
+    # Linear model
+    (local_X_train, local_y_train), (local_X_val, local_y_val), (local_X_test, local_y_test) = load_local_data(ds_name, L=L, H=1, return_split=['train', 'val', 'test'], verbose=verbose)
+    for ds_index in tqdm.trange(len(local_X_train), desc='process local models'):
+        m = LinearRegression()
+        m.fit(local_X_train[ds_index], local_y_train[ds_index])
 
-                train_preds = m.predict(local_X_train[ds_index]).reshape(local_y_train[ds_index].shape)
-                val_preds = m.predict(local_X_val[ds_index]).reshape(local_y_val[ds_index].shape)
-                test_preds = m.predict(local_X_test[ds_index]).reshape(local_y_test[ds_index].shape)
+        train_preds = m.predict(local_X_train[ds_index]).reshape(local_y_train[ds_index].shape)
+        val_preds = m.predict(local_X_val[ds_index]).reshape(local_y_val[ds_index].shape)
+        test_preds = m.predict(local_X_test[ds_index]).reshape(local_y_test[ds_index].shape)
 
-                all_train_predictions[m_name].append(train_preds.squeeze())
-                all_train_predictions['y'].append(local_y_train[ds_index].squeeze())
-                all_val_predictions[m_name].append(val_preds.squeeze())
-                all_val_predictions['y'].append(local_y_val[ds_index].squeeze())
-                all_test_predictions[m_name].append(test_preds.squeeze())
-                all_test_predictions['y'].append(local_y_test[ds_index].squeeze())
+        all_train_predictions['linear'].append(train_preds.squeeze())
+        all_train_predictions['y'].append(local_y_train[ds_index].squeeze())
+        all_val_predictions['linear'].append(val_preds.squeeze())
+        all_val_predictions['y'].append(local_y_val[ds_index].squeeze())
+        all_test_predictions['linear'].append(test_preds.squeeze())
+        all_test_predictions['y'].append(local_y_test[ds_index].squeeze())
 
-                for loss_fn in loss_fn_names:
-                    loss = eval(loss_fn)(test_preds.squeeze(), local_y_test[ds_index].squeeze())
-                    all_loss_values[f'linear_{loss_fn}'].append(loss)
-            continue
-        elif m_name == 'deepar':
-            try:
-                with open(f'models/{ds_name}/deepar.pickle', 'rb') as f:
-                    m = CPU_Unpickler(f).load().to('cpu')
-                    m.device = 'cpu'
-                    m.lstm.flatten_parameters()
-            except FileNotFoundError:
-                continue
-        elif m_name == 'fcnn':
-            try:
-                with open(f'models/{ds_name}/fcnn.pickle', 'rb') as f:
-                    m = CPU_Unpickler(f).load()
-                    m.device = 'cpu'
-                    m.model = m.model.to('cpu')
-            except FileNotFoundError:
-                continue
-        elif m_name == 'cnn':
-            try:
-                with open(f'models/{ds_name}/cnn.pickle', 'rb') as f:
-                    m = CPU_Unpickler(f).load()
-                    m.device = 'cpu'
-                    m.model = m.model.to('cpu')
-            except FileNotFoundError:
-                continue
-        else:
-            raise NotImplementedError('Unknown model', m_name)
-        for X_train, y_train, X_val, y_val, X_test, y_test in zip(global_X_train, global_y_train, global_X_val, global_y_val, global_X_test, global_y_test):
+        for loss_fn in loss_fn_names:
+            loss = eval(loss_fn)(test_preds.squeeze(), local_y_test[ds_index].squeeze())
+            all_loss_values[f'linear_{loss_fn}'].append(loss)
+
+    n_ts = len(local_X_train)
+    del local_X_train, local_y_train, local_X_val, local_y_val, local_X_test, local_y_test
+
+    # Load global models
+    with open(f'models/{ds_name}/deepar.pickle', 'rb') as f:
+        deepar = CPU_Unpickler(f).load().to('cpu')
+        deepar.device = 'cpu'
+        deepar.lstm.flatten_parameters()
+
+    with open(f'models/{ds_name}/fcnn.pickle', 'rb') as f:
+        fcnn = CPU_Unpickler(f).load()
+        fcnn.device = 'cpu'
+        fcnn.model = fcnn.model.to('cpu')
+
+    with open(f'models/{ds_name}/cnn.pickle', 'rb') as f:
+        cnn = CPU_Unpickler(f).load()
+        cnn.device = 'cpu'
+        cnn.model = cnn.model.to('cpu')
+
+    for _X_train, _y_train, _X_val, _y_val, _X_test, _y_test in tqdm.tqdm(load_global_data(ds_name, L=L, H=1, freq=freq), total=n_ts, desc='process global models'):
+        for m_name, m in zip(['fcnn', 'deepar', 'cnn'], [fcnn, deepar, cnn]):
             if m_name == 'fcnn':
-                X_train = X_train.reshape(X_train.shape[0], -1)
-                y_train = y_train.reshape(y_train.shape[0], -1)
-                X_val = X_val.reshape(X_val.shape[0], -1)
-                y_val = y_val.reshape(y_val.shape[0], -1)
-                X_test = X_test.reshape(X_test.shape[0], -1)
-                y_test = y_test.reshape(y_test.shape[0], -1)
-            if m_name == 'cnn':
-                X_train = np.swapaxes(X_train, 1, 2)
-                X_val = np.swapaxes(X_val, 1, 2)
-                X_test = np.swapaxes(X_test, 1, 2)
+                X_train = _X_train.reshape(_X_train.shape[0], -1)
+                y_train = _y_train.reshape(_y_train.shape[0], -1)
+                X_val = _X_val.reshape(_X_val.shape[0], -1)
+                y_val = _y_val.reshape(_y_val.shape[0], -1)
+                X_test = _X_test.reshape(_X_test.shape[0], -1)
+                y_test = _y_test.reshape(_y_test.shape[0], -1)
+            elif m_name == 'cnn':
+                X_train = np.swapaxes(_X_train, 1, 2)
+                X_val = np.swapaxes(_X_val, 1, 2)
+                X_test = np.swapaxes(_X_test, 1, 2)
+            elif m_name == 'deepar':
+                X_train = _X_train
+                X_val = _X_val
+                X_test = _X_test
+                y_train = _y_train
+                y_val = _y_val
+                y_test = _y_test
 
             train_preds = m.predict(X_train).reshape(y_train.shape)
             val_preds = m.predict(X_val).reshape(y_val.shape)
