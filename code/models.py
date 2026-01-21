@@ -14,6 +14,74 @@ from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from collections import Counter
 from scipy.stats import mode
 
+class TemporalLinearARMA:
+    def __init__(self, params):
+        self.intercept_ = float(params.get('intercept', 0.0))
+
+        # AR: ar.L1 = y_{t-1} (most recent)
+        self.ar_coefs_ = np.array(
+            [v for k, v in sorted(params.items())
+             if k.startswith('ar.L')],
+            dtype=float
+        )
+
+        # MA: ma.L1 = e_{t-1}
+        self.ma_coefs_ = np.array(
+            [v for k, v in sorted(params.items())
+             if k.startswith('ma.L')],
+            dtype=float
+        )
+
+        self.p_ = len(self.ar_coefs_)
+        self.q_ = len(self.ma_coefs_)
+
+    def predict(self, X, y_true=None):
+        """
+        Parameters
+        ----------
+        X : np.ndarray, shape (n, T)
+            Sliding windows ordered in time.
+        y_true : np.ndarray or None, shape (n,)
+            True values y_t, if available (teacher forcing).
+            If None, residuals are computed as zero for all steps.
+
+        Returns
+        -------
+        y_hat : np.ndarray, shape (n,)
+        """
+
+        n = X.shape[0]
+        y_hat = np.zeros(n)
+
+        # Residual buffer: [e_{t-1}, e_{t-2}, ..., e_{t-q}]
+        res_buf = np.zeros(self.q_)
+
+        for i in range(n):
+            pred = self.intercept_
+
+            # AR term
+            if self.p_ > 0:
+                ar_lags = X[i, -1:-(self.p_ + 1):-1]
+                pred += ar_lags @ self.ar_coefs_
+
+            # MA term
+            if self.q_ > 0:
+                pred += res_buf @ self.ma_coefs_
+
+            y_hat[i] = pred
+
+            # Update residual buffer
+            if y_true is not None:
+                err = y_true[i] - pred
+            else:
+                err = 0.0
+
+            if self.q_ > 0:
+                res_buf = np.roll(res_buf, 1)
+                res_buf[0] = err
+
+        return y_hat
+
 class UpsampleEnsembleClassifier:
 
     def __init__(self, model_class, n_member, *args, random_state=None, **kwargs):

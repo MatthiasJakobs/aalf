@@ -15,14 +15,10 @@ from critdd import Diagrams
 from config import ALL_DATASETS, DS_MAP, MODEL_MAP, LOSS_MAP
 from itertools import product
 from sktime.forecasting.ets import AutoETS
-
+from sktime.forecasting.arima import AutoARIMA
+from joblib import Parallel, delayed
+from models import TemporalLinearARMA
 import warnings
-
-warnings.filterwarnings(
-    'ignore',
-    message='.*AutoETS can not accept new data when update_params=False.*',
-    category=UserWarning
-)
 
 class CPU_Unpickler(pickle.Unpickler):
     def find_class(self, module, name):
@@ -30,12 +26,91 @@ class CPU_Unpickler(pickle.Unpickler):
             return lambda b: torch.load(io.BytesIO(b), map_location='cpu', weights_only=False)
         else: return super().find_class(module, name)
 
+def process_single_series(ds_index, X_train, local_X_train, local_y_train, local_X_val, local_y_val, local_X_test, local_y_test, loss_fn_names):
+    results = {}
+
+    # Linear model
+    lin = LinearRegression()
+    lin.fit(local_X_train[ds_index], local_y_train[ds_index])
+    train_preds_lin = lin.predict(local_X_train[ds_index]).reshape(local_y_train[ds_index].shape)
+    val_preds_lin = lin.predict(local_X_val[ds_index]).reshape(local_y_val[ds_index].shape)
+    test_preds_lin = lin.predict(local_X_test[ds_index]).reshape(local_y_test[ds_index].shape)
+
+    results['linear'] = {
+        'train': train_preds_lin.squeeze(),
+        'val': val_preds_lin.squeeze(),
+        'test': test_preds_lin.squeeze(),
+        'y_train': local_y_train[ds_index].squeeze(),
+        'y_val': local_y_val[ds_index].squeeze(),
+        'y_test': local_y_test[ds_index].squeeze(),
+        'loss': {'rmse': rmse(test_preds_lin.squeeze(), local_y_test[ds_index].squeeze()), 'smape': smape(test_preds_lin.squeeze(), local_y_test[ds_index].squeeze())}
+    }
+
+    # AutoETS
+    ets = AutoETS(auto=True, additive_only=True, n_jobs=1, random_state=1234)
+    ets.fit(X_train[ds_index].squeeze())
+
+    train_preds_ets = np.zeros_like(local_y_train[ds_index])
+    val_preds_ets = np.zeros_like(local_y_val[ds_index])
+    test_preds_ets = np.zeros_like(local_y_test[ds_index])
+
+    # teacher-forced predictions
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', message='.*AutoETS can not accept new data when update_params=False.*', category=UserWarning)
+        for i, x_true in enumerate(local_X_train[ds_index]):
+            ets.update(x_true, update_params=False)
+            train_preds_ets[i] = ets.predict(fh=[1]).squeeze()
+        for i, x_true in enumerate(local_X_val[ds_index]):
+            ets.update(x_true, update_params=False)
+            val_preds_ets[i] = ets.predict(fh=[1]).squeeze()
+        for i, x_true in enumerate(local_X_test[ds_index]):
+            ets.update(x_true, update_params=False)
+            test_preds_ets[i] = ets.predict(fh=[1]).squeeze()
+
+    results['autoets'] = {
+        'train': train_preds_ets.squeeze(),
+        'val': val_preds_ets.squeeze(),
+        'test': test_preds_ets.squeeze(),
+        'y_train': local_y_train[ds_index].squeeze(),
+        'y_val': local_y_val[ds_index].squeeze(),
+        'y_test': local_y_test[ds_index].squeeze(),
+        'loss': {'rmse': rmse(test_preds_ets.squeeze(), local_y_test[ds_index].squeeze()), 'smape': smape(test_preds_ets.squeeze(), local_y_test[ds_index].squeeze())}
+    }
+
+    # AutoARIMA
+    L = local_X_train[ds_index].shape[-1]
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', message='.*Non-invertible starting MA parameters found.*', category=UserWarning)
+        warnings.filterwarnings('ignore', message='.*Non-stationary starting autoregressive parameters found.*', category=UserWarning)
+        warnings.filterwarnings('ignore', message='.*Maximum Likelihood optimization failed to converge.*', category=UserWarning)
+
+        arima = AutoARIMA(start_p=(L//2), max_p=L, start_q=(L//2), max_q=L, d=0, max_d=0, seasonal=False, stepwise=False, random=True, n_fits=10, maxiter=200, random_state=0)
+        arima.fit(X_train[ds_index].squeeze())
+        params = arima.get_fitted_params()
+    
+        wArima = TemporalLinearARMA(params)
+        train_preds_arima = wArima.predict(local_X_train[ds_index], local_y_train[ds_index])
+        val_preds_arima = wArima.predict(local_X_val[ds_index], local_y_val[ds_index])
+        test_preds_arima = wArima.predict(local_X_test[ds_index], local_y_test[ds_index])
+
+    results['autoarima'] = {
+        'train': train_preds_arima.squeeze(),
+        'val': val_preds_arima.squeeze(),
+        'test': test_preds_arima.squeeze(),
+        'y_train': local_y_train[ds_index].squeeze(),
+        'y_val': local_y_val[ds_index].squeeze(),
+        'y_test': local_y_test[ds_index].squeeze(),
+        'loss': {'rmse': rmse(test_preds_arima.squeeze(), local_y_test[ds_index].squeeze()), 'smape': smape(test_preds_arima.squeeze(), local_y_test[ds_index].squeeze())}
+    }
+
+    return results
+
 def evaluate_models(ds_name, verbose=False):
     dsh = DATASET_HYPERPARAMETERS[ds_name]
     L = dsh['L']
     freq = dsh['freq']
     loss_fn_names = ['rmse', 'smape']
-    model_names = ['linear', 'autoets', 'fcnn', 'deepar', 'cnn']
+    model_names = ['linear', 'autoets', 'autoarima', 'fcnn', 'deepar', 'cnn']
 
     all_loss_values = {f'{m_name}_{loss_name}': [] for m_name, loss_name in product(model_names, loss_fn_names)}
     all_train_predictions = {m_name: [] for m_name in model_names + ['y']}
@@ -45,46 +120,28 @@ def evaluate_models(ds_name, verbose=False):
     # Linear model
     X_train, _, _ = _load_data(ds_name, return_start_dates=False)
     (local_X_train, local_y_train), (local_X_val, local_y_val), (local_X_test, local_y_test) = load_local_data(ds_name, L=L, H=1, return_split=['train', 'val', 'test'], verbose=verbose)
-    for ds_index in tqdm.trange(len(local_X_train), desc='process local models'):
-        lin = LinearRegression()
-        ets = AutoETS(auto=True, additive_only=True, n_jobs=-1, random_state=1234)
-        for m_name, m in zip(['autoets', 'linear'], [ets, lin]):
-            if m_name == 'linear':
-                m.fit(local_X_train[ds_index], local_y_train[ds_index])
-                train_preds = m.predict(local_X_train[ds_index]).reshape(local_y_train[ds_index].shape)
-                val_preds = m.predict(local_X_val[ds_index]).reshape(local_y_val[ds_index].shape)
-                test_preds = m.predict(local_X_test[ds_index]).reshape(local_y_test[ds_index].shape)
-            elif m_name == 'autoets':
-                ets = AutoETS(auto=True, additive_only=True)
-                ets.fit(X_train[ds_index].squeeze())
-                train_preds = np.zeros_like(local_y_train[ds_index])
-                val_preds = np.zeros_like(local_y_val[ds_index])
-                test_preds = np.zeros_like(local_y_test[ds_index])
-                for i, x_true in enumerate(local_X_train[ds_index]):
-                    ets.update(x_true, update_params=False)
-                    pred = ets.predict(fh=[1]).squeeze()
-                    train_preds[i] = pred
-                for i, x_true in enumerate(local_X_val[ds_index]):
-                    ets.update(x_true, update_params=False)
-                    pred = ets.predict(fh=[1]).squeeze()
-                    val_preds[i] = pred
-                for i, x_true in enumerate(local_X_test[ds_index]):
-                    ets.update(x_true, update_params=False)
-                    pred = ets.predict(fh=[1]).squeeze()
-                    test_preds[i] = pred
-
-            all_train_predictions[m_name].append(train_preds.squeeze())
-            all_train_predictions['y'].append(local_y_train[ds_index].squeeze())
-            all_val_predictions[m_name].append(val_preds.squeeze())
-            all_val_predictions['y'].append(local_y_val[ds_index].squeeze())
-            all_test_predictions[m_name].append(test_preds.squeeze())
-            all_test_predictions['y'].append(local_y_test[ds_index].squeeze())
-
-            for loss_fn in loss_fn_names:
-                loss = eval(loss_fn)(test_preds.squeeze(), local_y_test[ds_index].squeeze())
-                all_loss_values[f'{m_name}_{loss_fn}'].append(loss)
 
     n_ts = len(local_X_train)
+    n_jobs = min(n_ts, 8)  # number of threads
+
+    results_list = Parallel(n_jobs=n_jobs)(delayed(process_single_series)(
+            ds_index, X_train, local_X_train, local_y_train,
+            local_X_val, local_y_val, local_X_test, local_y_test,
+            loss_fn_names
+        )
+        for ds_index in tqdm.trange(len(local_X_train), desc='process local models')
+    )
+    for res in results_list:
+        for m_name in ['linear', 'autoets', 'autoarima']:
+            all_train_predictions[m_name].append(res[m_name]['train'])
+            all_val_predictions[m_name].append(res[m_name]['val'])
+            all_test_predictions[m_name].append(res[m_name]['test'])
+            all_train_predictions['y'].append(res[m_name]['y_train'])
+            all_val_predictions['y'].append(res[m_name]['y_val'])
+            all_test_predictions['y'].append(res[m_name]['y_test'])
+            for loss_name in loss_fn_names:
+                all_loss_values[f'{m_name}_{loss_name}'].append(res[m_name]['loss'][loss_name])
+
     del local_X_train, local_y_train, local_X_val, local_y_val, local_X_test, local_y_test
     del X_train
 
@@ -235,11 +292,10 @@ def generate_latex_table():
         f.write(latex_output)
 
 def main():
-    # for ds_name in ALL_DATASETS:
-    #     evaluate_models(ds_name, verbose=True)
+    for ds_name in ALL_DATASETS:
+        evaluate_models(ds_name, verbose=True)
     # generate_cdd_plot(loss_fn='rmse')
     # generate_latex_table()
-    evaluate_models('nn5_daily_nomissing', verbose=True)
 
 if __name__ == '__main__':
     main()
