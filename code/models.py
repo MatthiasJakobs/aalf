@@ -13,74 +13,249 @@ from sklearn.utils import resample
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from collections import Counter
 from scipy.stats import mode
+from itertools import product
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from pmdarima import auto_arima
 
-class TemporalLinearARMA:
-    def __init__(self, params):
-        self.intercept_ = float(params.get('intercept', 0.0))
 
-        # AR: ar.L1 = y_{t-1} (most recent)
-        self.ar_coefs_ = np.array(
-            [v for k, v in sorted(params.items())
-             if k.startswith('ar.L')],
-            dtype=float
-        )
+class AutoETS:
+    def __init__(self, seasonal=None):
+        self.model_ = None
+        self.best_fit_ = None
+        self.best_params_ = None
+        self.state_ = None
+        self.model_form_ = None
+        self.seasonal = seasonal
 
-        # MA: ma.L1 = e_{t-1}
-        self.ma_coefs_ = np.array(
-            [v for k, v in sorted(params.items())
-             if k.startswith('ma.L')],
-            dtype=float
-        )
-
-        self.p_ = len(self.ar_coefs_)
-        self.q_ = len(self.ma_coefs_)
-
-    def predict(self, X, y_true=None):
+    def fit(self, train):
         """
-        Parameters
-        ----------
-        X : np.ndarray, shape (n, T)
-            Sliding windows ordered in time.
-        y_true : np.ndarray or None, shape (n,)
-            True values y_t, if available (teacher forcing).
-            If None, residuals are computed as zero for all steps.
-
-        Returns
-        -------
-        y_hat : np.ndarray, shape (n,)
+        Fit the best ETS model to the training data.
+        Tries all combinations of trend and seasonality.
         """
+        # Define all possible model forms
+        trends = ['add', 'mul', None]
+        seasonal = ['add', 'mul', None]
 
-        n = X.shape[0]
-        y_hat = np.zeros(n)
+        best_aic = np.inf
+        best_fit = None
+        best_params = None
 
-        # Residual buffer: [e_{t-1}, e_{t-2}, ..., e_{t-q}]
-        res_buf = np.zeros(self.q_)
+        for trend, season in product(trends, seasonal):
+            try:
+                model = ExponentialSmoothing(
+                    train,
+                    trend=trend,
+                    seasonal=season,
+                    seasonal_periods=self.seasonal,
+                    use_boxcox=False,
+                )
+                fit = model.fit()
+                if fit.aic < best_aic:
+                    best_aic = fit.aic
+                    best_fit = fit
+                    best_params = {
+                        'trend': trend,
+                        'seasonal': season,
+                    }
+            except:
+                continue
 
-        for i in range(n):
-            pred = self.intercept_
+        self.best_fit_ = best_fit
+        self.best_params_ = best_params
+        self.model_form_ = (best_params['trend'], best_params['seasonal'])
 
-            # AR term
-            if self.p_ > 0:
-                ar_lags = X[i, -1:-(self.p_ + 1):-1]
-                pred += ar_lags @ self.ar_coefs_
+        # Initialize state
+        self._init_state(best_fit)
 
-            # MA term
-            if self.q_ > 0:
-                pred += res_buf @ self.ma_coefs_
+    def _init_state(self, fit):
+        """Initialize state from fitted model."""
+        self.state_ = {
+            'level': fit.level[-1],
+            'trend': fit.trend[-1] if hasattr(fit, 'trend') else 0,
+            'season': fit.season[-12:] if hasattr(fit, 'season') else np.zeros(12),
+            'alpha': fit.params.get('smoothing_level', 0),
+            'beta': fit.params.get('smoothing_trend', 0),
+            'gamma': fit.params.get('smoothing_seasonal', 0),
+        }
 
-            y_hat[i] = pred
+    def _update_state(self, y):
+        """Update state with new observation y."""
+        trend, season = self.model_form_
+        alpha, beta, gamma = self.state_['alpha'], self.state_['beta'], self.state_['gamma']
+        level, trend_val, season_val = self.state_['level'], self.state_['trend'], self.state_['season']
 
-            # Update residual buffer
-            if y_true is not None:
-                err = y_true[i] - pred
-            else:
-                err = 0.0
+        # Update level
+        if trend == 'add':
+            new_level = alpha * y + (1 - alpha) * (level + trend_val)
+        elif trend == 'mul':
+            new_level = alpha * y + (1 - alpha) * (level * trend_val)
+        else:  # None
+            new_level = alpha * y + (1 - alpha) * level
 
-            if self.q_ > 0:
-                res_buf = np.roll(res_buf, 1)
-                res_buf[0] = err
+        # Update trend
+        if trend == 'add':
+            new_trend = beta * (new_level - level) + (1 - beta) * trend_val
+        elif trend == 'mul':
+            new_trend = beta * (new_level / level) + (1 - beta) * trend_val
+        else:  # None
+            new_trend = 0
 
-        return y_hat
+        # Update season
+        if season == 'add':
+            new_season = gamma * (y - level - trend_val) + (1 - gamma) * season_val[0]
+        elif season == 'mul':
+            new_season = gamma * (y / (level + trend_val)) + (1 - gamma) * season_val[0]
+        else:  # None
+            new_season = 0
+
+        # Update state
+        self.state_['level'] = new_level
+        self.state_['trend'] = new_trend
+        self.state_['season'] = np.roll(self.state_['season'], -1)
+        self.state_['season'][-1] = new_season
+
+    def _forecast_next(self):
+        """Forecast the next value using current state."""
+        trend, season = self.model_form_
+        level, trend_val, season_val = self.state_['level'], self.state_['trend'], self.state_['season']
+
+        if trend == 'add' and season == 'add':
+            return level + trend_val + season_val[0]
+        elif trend == 'add' and season == 'mul':
+            return (level + trend_val) * season_val[0]
+        elif trend == 'mul' and season == 'add':
+            return level * trend_val + season_val[0]
+        elif trend == 'mul' and season == 'mul':
+            return level * trend_val * season_val[0]
+        elif trend == 'add':
+            return level + trend_val
+        elif trend == 'mul':
+            return level * trend_val
+        elif season == 'add':
+            return level + season_val[0]
+        elif season == 'mul':
+            return level * season_val[0]
+        else:
+            return level
+
+    def predict(self, X, y):
+        """
+        Perform rolling ETS forecasts using a sliding window.
+
+        Args:
+            X: 2D numpy array of shape (n_windows, window_size)
+            y: 1D numpy array of shape (n_windows,) - true values for each window
+
+        Returns:
+            forecasts: 1D numpy array of one-step-ahead predictions
+        """
+        forecasts = []
+        for i in range(len(X)):
+            forecast = self._forecast_next()
+            forecasts.append(forecast)
+            self._update_state(y[i])
+
+        return np.array(forecasts)
+
+class AutoARIMA:
+    def __init__(self, max_p=5, max_d=1, max_q=5, random_state=None, n_runs=None):
+        """
+        Initialize AutoARIMA.
+
+        Args:
+            max_p: Maximum AR order (p)
+            max_d: Maximum differencing order (d) (0 or 1)
+            max_q: Maximum MA order (q)
+            random_state: Random seed for reproducibility
+            n_runs: Maximum number of configurations to try (if None, tries all)
+        """
+        self.max_p = max_p
+        self.max_d = max_d
+        self.max_q = max_q
+        self.random_state = random_state
+        self.n_runs = n_runs
+        self.model_ = None
+        self.order_ = None
+        self.arparams = None
+        self.maparams = None
+        self.history = []
+        self.resid = []
+        self.last_obs = None
+
+    def fit(self, train):
+        """
+        Fit the best ARIMA model to the training data.
+        """
+        # Use auto_arima to find the best model
+        model = auto_arima(
+            train,
+            max_p=self.max_p,
+            max_d=self.max_d,
+            max_q=self.max_q,
+            seasonal=False,
+            random_state=self.random_state,
+            n_fits=self.n_runs,
+            suppress_warnings=True,
+            stepwise=True,
+        )
+        self.model_ = model
+        self.order_ = model.order
+        self.arparams = model.arparams()
+        self.maparams = model.maparams()
+        self.history = list(train[-self.order_[0]:]) if self.order_[0] > 0 else []
+        self.resid = []
+        self.last_obs = train[-1]
+
+    def predict(self, X, y):
+        """
+        Perform rolling ARIMA forecasts using a persistent model.
+
+        Args:
+            X: 2D numpy array of shape (n_windows, window_size)
+            y: 1D numpy array of shape (n_windows,) - true values for each window
+
+        Returns:
+            forecasts: 1D numpy array of one-step-ahead predictions
+        """
+        forecasts = []
+        p, d, q = self.order_
+
+        for i in range(len(X)):
+            # Get the last p values for AR
+            ar_part = X[i][-p:] if p > 0 else np.array([])
+            if d == 1:
+                # Pre-difference the entire window, then take the last p values
+                diff_window = np.diff(X[i], n=1)
+                ar_part = diff_window[-p:] if p > 0 else np.array([])
+
+            # Forecast next step
+            forecast = np.dot(self.arparams, ar_part) if p > 0 else 0
+            if q > 0:
+                # MA part depends on last q residuals
+                ma_part = np.dot(self.maparams, self.resid[-q:][::-1]) if len(self.resid) >= q else 0
+                forecast += ma_part
+
+            # Undo differencing if d=1
+            if d == 1:
+                forecast += self.last_obs
+
+            forecasts.append(forecast)
+
+            # Update history, residuals, and last observation
+            self.last_obs = y[i]
+            if p > 0:
+                if d == 0:
+                    self.history = list(X[i][-p+1:]) + [y[i]]
+                else:  # d == 1
+                    # Update history with the last p differenced values
+                    diff_window = np.diff(X[i], n=1)
+                    self.history = list(diff_window[-p+1:]) + [y[i] - self.last_obs]
+            residual = y[i] - forecast
+            self.resid.append(residual)
+            if len(self.resid) > q:
+                self.resid.pop(0)
+
+        return np.array(forecasts)
 
 class UpsampleEnsembleClassifier:
 
