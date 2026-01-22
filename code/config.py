@@ -1,10 +1,10 @@
 DATASET_HYPERPARAMETERS = {
-    'australian_electricity_demand': {'freq': '30min', 'L': 48, 'fint': 'linear', 'fcomp': 'fcnn' },
-    'pedestrian_counts': {'freq': '1h', 'L': 24 , 'fint': 'linear', 'fcomp': 'deepar' },
-    'nn5_daily_nomissing': {'freq': '1d', 'L': 14, 'fint': 'linear', 'fcomp': 'cnn' },
-    'weather': {'freq': '1d', 'L': 14, 'fint': 'linear', 'fcomp': 'deepar' },
-    'kdd_cup_nomissing': {'freq': '1h', 'L': 24, 'fint': 'linear', 'fcomp': 'fcnn' },
-    'solar_10_minutes':{'freq': '1h', 'L': 24, 'fint': 'linear', 'fcomp': 'cnn' }
+    'australian_electricity_demand': {'freq': '30min', 'L': 48, 'S':48, 'fint': 'linear', 'fcomp': 'fcnn' },
+    'pedestrian_counts': {'freq': '1h', 'L': 24 , 'S': 24, 'fint': 'linear', 'fcomp': 'deepar' },
+    'nn5_daily_nomissing': {'freq': '1d', 'L': 14, 'S': 7, 'fint': 'linear', 'fcomp': 'cnn' },
+    'weather': {'freq': '1d', 'L': 14, 'S': 7, 'fint': 'linear', 'fcomp': 'deepar' },
+    'kdd_cup_nomissing': {'freq': '1h', 'L': 24, 'S': 24, 'fint': 'linear', 'fcomp': 'fcnn' },
+    'solar_10_minutes':{'freq': '1h', 'L': 24, 'S': 24, 'fint': 'linear', 'fcomp': 'cnn' }
 }
 
 DEEPAR_HYPERPARAMETERS = {
@@ -54,6 +54,10 @@ MODEL_MAP = {
     'fcnn': 'FCNN',
     'deepar': 'DeepAR',
     'cnn': 'CNN',
+    'autoarima': 'AutoAR',
+    'autoets': 'AutoETS',
+    'lastvalue': 'LV',
+    'meanvalue': 'MV',
 }
 
 LOSS_MAP = {

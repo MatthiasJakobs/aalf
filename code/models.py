@@ -5,257 +5,136 @@ import torch.nn as nn
 from tsx.utils import get_device, EarlyStopping
 from preprocessing import _load_data, generate_covariates
 from multiprocessing import cpu_count
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestClassifier
+from statsmodels.tsa.exponential_smoothing.ets import ETSModel
+from statsmodels.tsa.ar_model import AutoReg
 
-from sklearn.base import BaseEstimator, ClassifierMixin, clone
-from sklearn.utils import resample
-from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
-from collections import Counter
-from scipy.stats import mode
-from itertools import product
-from statsmodels.tsa.holtwinters import ExponentialSmoothing
-from pmdarima import auto_arima
+class SES:
+    def fit(self, y, m=1, verbose=False, maxiter=1000):
+        model = ETSModel(y, error='add', trend=None, damped_trend=False, seasonal=None)
+        fit = model.fit(disp=verbose, maxiter=maxiter)
+        params = fit.params
+        self.aic = fit.aic
+        self.alpha = params[0]
+        self.l0 = params[-1]
+        if verbose:
+            print(f'alpha={self.alpha}, l_0={self.l0}')
 
+        return self
+
+    def predict(self, y, L=10):
+        preds = []
+        for y_t in y:
+            lt = self.alpha * y_t + (1-self.alpha) * self.l0
+            pred = lt
+            preds.append(pred)
+            self.l0 = lt
+        return np.array(preds)[L:]
+
+class HoltsLinearTrend:
+
+    def fit(self, y, m=1, verbose=False, maxiter=1000):
+        model = ETSModel(y, error='add', trend='add', damped_trend=False, seasonal=None)
+        fit = model.fit(disp=verbose, maxiter=maxiter)
+        params = fit.params
+        self.aic = fit.aic
+        self.alpha, self.beta, self.l0, self.b0 = params
+        if verbose:
+            print(f'alpha={self.alpha}, beta*={self.beta}, l_0={self.l0}, b_0={self.b0}')
+
+        return self
+
+    def predict(self, y, L=10):
+        preds = []
+        for y_t in y:
+            lt = self.alpha * y_t + (1-self.alpha) * (self.l0 + self.b0)
+            bt = self.beta * (lt - self.l0) + (1-self.beta)*self.b0
+            pred = lt + bt
+            preds.append(pred)
+            self.l0 = lt
+            self.b0 = bt
+        return np.array(preds)[L:]
+
+class HoltWinter:
+    def fit(self, y, m, verbose=False, maxiter=1000):
+        model = ETSModel(y, error='add', trend='add', damped_trend=False, seasonal='add', seasonal_periods=m)
+        fit = model.fit(disp=verbose, maxiter=maxiter)
+        params = fit.params
+        self.aic = fit.aic
+        self.m = m
+        self.alpha = params[0]
+        self.beta = params[1]
+        self.gamma = params[2] 
+        self.l0 = params[3]
+        self.b0 = params[4]
+        self.s0 = np.array(params[5:])
+        if verbose:
+            print(f'alpha={self.alpha}, beta*={self.beta}, gamma={self.gamma}, l_0={self.l0}, b_0={self.b0}, s_0={self.s0}')
+
+        return self
+
+    def predict(self, y, L=10):
+        preds = []
+        for y_t in y:
+            lt = self.alpha * (y_t - self.s0[0]) + (1-self.alpha) * (self.l0 + self.b0)
+            bt = self.beta * (lt - self.l0) + (1-self.beta)*self.b0
+            st = self.gamma * (y_t - self.l0 - self.b0) + (1-self.gamma) * self.s0[0]
+            pred = lt + bt + self.s0[1]
+            preds.append(pred)
+            self.l0 = lt
+            self.b0 = bt
+            self.s0 = np.roll(self.s0, -1)
+            self.s0[-1] = st
+
+        return np.array(preds)[L:]
 
 class AutoETS:
-    def __init__(self, seasonal=None):
-        self.model_ = None
-        self.best_fit_ = None
-        self.best_params_ = None
-        self.state_ = None
-        self.model_form_ = None
-        self.seasonal = seasonal
 
-    def fit(self, train):
-        """
-        Fit the best ETS model to the training data.
-        Tries all combinations of trend and seasonality.
-        """
-        # Define all possible model forms
-        trends = ['add', 'mul', None]
-        seasonal = ['add', 'mul', None]
+    def fit(self, y, m=1, maxiter=5000):
+        models = [SES().fit(y, m=m, maxiter=maxiter), HoltsLinearTrend().fit(y, m=m, maxiter=maxiter), HoltWinter().fit(y, m=m, maxiter=maxiter)]
+        aics = [model.aic for model in models]
+        self.model = models[np.argmin(aics)]
 
-        best_aic = np.inf
-        best_fit = None
-        best_params = None
+    def predict(self, y, L=10):
+        return self.model.predict(y, L=L)
 
-        for trend, season in product(trends, seasonal):
-            try:
-                model = ExponentialSmoothing(
-                    train,
-                    trend=trend,
-                    seasonal=season,
-                    seasonal_periods=self.seasonal,
-                    use_boxcox=False,
-                )
-                fit = model.fit()
-                if fit.aic < best_aic:
-                    best_aic = fit.aic
-                    best_fit = fit
-                    best_params = {
-                        'trend': trend,
-                        'seasonal': season,
-                    }
-            except:
-                continue
+class AutoAR():
 
-        self.best_fit_ = best_fit
-        self.best_params_ = best_params
-        self.model_form_ = (best_params['trend'], best_params['seasonal'])
+    def fit(self, y, L=10):
+        self.intercept_ = 0
+        self.trend_coef_ = 0
+        self.arparams_ = None
+        best_bic = np.inf
+        self.L = L
 
-        # Initialize state
-        self._init_state(best_fit)
+        for trend in ['n', 'c', 't', 'ct']:
+            model = AutoReg(y, lags=L, trend=trend)
+            res = model.fit()
+            if res.bic < best_bic:
+                best_bic = res.bic
+                if trend == 'n':
+                    self.intercept_ = 0.0
+                    self.trend_coef_ = 0.0
+                    self.arparams_ = res.params
+                elif trend == 'c':
+                    self.intercept_ = res.params[0]
+                    self.trend_coef_ = 0.0
+                    self.arparams_ = res.params[1:]
+                elif trend == 't':
+                    self.intercept_ = 0.0
+                    self.trend_coef_ = res.params[0]
+                    self.arparams_ = res.params[1:]
+                elif trend == 'ct':
+                    self.intercept_ = res.params[0]
+                    self.trend_coef_ = res.params[1]
+                    self.arparams_ = res.params[2:]
 
-    def _init_state(self, fit):
-        """Initialize state from fitted model."""
-        self.state_ = {
-            'level': fit.level[-1],
-            'trend': fit.trend[-1] if hasattr(fit, 'trend') else 0,
-            'season': fit.season[-12:] if hasattr(fit, 'season') else np.zeros(12),
-            'alpha': fit.params.get('smoothing_level', 0),
-            'beta': fit.params.get('smoothing_trend', 0),
-            'gamma': fit.params.get('smoothing_seasonal', 0),
-        }
+        return self
 
-    def _update_state(self, y):
-        """Update state with new observation y."""
-        trend, season = self.model_form_
-        alpha, beta, gamma = self.state_['alpha'], self.state_['beta'], self.state_['gamma']
-        level, trend_val, season_val = self.state_['level'], self.state_['trend'], self.state_['season']
-
-        # Update level
-        if trend == 'add':
-            new_level = alpha * y + (1 - alpha) * (level + trend_val)
-        elif trend == 'mul':
-            new_level = alpha * y + (1 - alpha) * (level * trend_val)
-        else:  # None
-            new_level = alpha * y + (1 - alpha) * level
-
-        # Update trend
-        if trend == 'add':
-            new_trend = beta * (new_level - level) + (1 - beta) * trend_val
-        elif trend == 'mul':
-            new_trend = beta * (new_level / level) + (1 - beta) * trend_val
-        else:  # None
-            new_trend = 0
-
-        # Update season
-        if season == 'add':
-            new_season = gamma * (y - level - trend_val) + (1 - gamma) * season_val[0]
-        elif season == 'mul':
-            new_season = gamma * (y / (level + trend_val)) + (1 - gamma) * season_val[0]
-        else:  # None
-            new_season = 0
-
-        # Update state
-        self.state_['level'] = new_level
-        self.state_['trend'] = new_trend
-        self.state_['season'] = np.roll(self.state_['season'], -1)
-        self.state_['season'][-1] = new_season
-
-    def _forecast_next(self):
-        """Forecast the next value using current state."""
-        trend, season = self.model_form_
-        level, trend_val, season_val = self.state_['level'], self.state_['trend'], self.state_['season']
-
-        if trend == 'add' and season == 'add':
-            return level + trend_val + season_val[0]
-        elif trend == 'add' and season == 'mul':
-            return (level + trend_val) * season_val[0]
-        elif trend == 'mul' and season == 'add':
-            return level * trend_val + season_val[0]
-        elif trend == 'mul' and season == 'mul':
-            return level * trend_val * season_val[0]
-        elif trend == 'add':
-            return level + trend_val
-        elif trend == 'mul':
-            return level * trend_val
-        elif season == 'add':
-            return level + season_val[0]
-        elif season == 'mul':
-            return level * season_val[0]
-        else:
-            return level
-
-    def predict(self, X, y):
-        """
-        Perform rolling ETS forecasts using a sliding window.
-
-        Args:
-            X: 2D numpy array of shape (n_windows, window_size)
-            y: 1D numpy array of shape (n_windows,) - true values for each window
-
-        Returns:
-            forecasts: 1D numpy array of one-step-ahead predictions
-        """
-        forecasts = []
-        for i in range(len(X)):
-            forecast = self._forecast_next()
-            forecasts.append(forecast)
-            self._update_state(y[i])
-
-        return np.array(forecasts)
-
-class AutoARIMA:
-    def __init__(self, max_p=5, max_d=1, max_q=5, random_state=None, n_runs=None):
-        """
-        Initialize AutoARIMA.
-
-        Args:
-            max_p: Maximum AR order (p)
-            max_d: Maximum differencing order (d) (0 or 1)
-            max_q: Maximum MA order (q)
-            random_state: Random seed for reproducibility
-            n_runs: Maximum number of configurations to try (if None, tries all)
-        """
-        self.max_p = max_p
-        self.max_d = max_d
-        self.max_q = max_q
-        self.random_state = random_state
-        self.n_runs = n_runs
-        self.model_ = None
-        self.order_ = None
-        self.arparams = None
-        self.maparams = None
-        self.history = []
-        self.resid = []
-        self.last_obs = None
-
-    def fit(self, train):
-        """
-        Fit the best ARIMA model to the training data.
-        """
-        # Use auto_arima to find the best model
-        model = auto_arima(
-            train,
-            max_p=self.max_p,
-            max_d=self.max_d,
-            max_q=self.max_q,
-            seasonal=False,
-            random_state=self.random_state,
-            n_fits=self.n_runs,
-            suppress_warnings=True,
-            stepwise=True,
-        )
-        self.model_ = model
-        self.order_ = model.order
-        self.arparams = model.arparams()
-        self.maparams = model.maparams()
-        self.history = list(train[-self.order_[0]:]) if self.order_[0] > 0 else []
-        self.resid = []
-        self.last_obs = train[-1]
-
-    def predict(self, X, y):
-        """
-        Perform rolling ARIMA forecasts using a persistent model.
-
-        Args:
-            X: 2D numpy array of shape (n_windows, window_size)
-            y: 1D numpy array of shape (n_windows,) - true values for each window
-
-        Returns:
-            forecasts: 1D numpy array of one-step-ahead predictions
-        """
-        forecasts = []
-        p, d, q = self.order_
-
-        for i in range(len(X)):
-            # Get the last p values for AR
-            ar_part = X[i][-p:] if p > 0 else np.array([])
-            if d == 1:
-                # Pre-difference the entire window, then take the last p values
-                diff_window = np.diff(X[i], n=1)
-                ar_part = diff_window[-p:] if p > 0 else np.array([])
-
-            # Forecast next step
-            forecast = np.dot(self.arparams, ar_part) if p > 0 else 0
-            if q > 0:
-                # MA part depends on last q residuals
-                ma_part = np.dot(self.maparams, self.resid[-q:][::-1]) if len(self.resid) >= q else 0
-                forecast += ma_part
-
-            # Undo differencing if d=1
-            if d == 1:
-                forecast += self.last_obs
-
-            forecasts.append(forecast)
-
-            # Update history, residuals, and last observation
-            self.last_obs = y[i]
-            if p > 0:
-                if d == 0:
-                    self.history = list(X[i][-p+1:]) + [y[i]]
-                else:  # d == 1
-                    # Update history with the last p differenced values
-                    diff_window = np.diff(X[i], n=1)
-                    self.history = list(diff_window[-p+1:]) + [y[i] - self.last_obs]
-            residual = y[i] - forecast
-            self.resid.append(residual)
-            if len(self.resid) > q:
-                self.resid.pop(0)
-
-        return np.array(forecasts)
+    def predict(self, X):
+        preds = self.intercept_ + X @ self.arparams_[::-1]
+        time_index = np.arange(len(X))
+        preds = preds + self.trend_coef_ * time_index
+        return preds
 
 class UpsampleEnsembleClassifier:
 
