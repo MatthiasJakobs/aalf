@@ -7,6 +7,7 @@ from os import makedirs
 from tsx.utils import string_to_randomstate
 from models import DeepAR, DeepVAR, FCNN, GlobalTorchDataset, CNN
 from os.path import exists
+from config import ALL_DATASETS
 
 def fit_cnn(ds_name):
     makedirs(f'models/{ds_name}/', exist_ok=True)
@@ -93,7 +94,6 @@ def fit_deepar(ds_name):
         pickle.dump(DAR, _f)
 
 def main():
-    ALL_DATASETS = ['australian_electricity_demand', 'nn5_daily_nomissing', 'weather', 'pedestrian_counts', 'kdd_cup_nomissing', 'solar_10_minutes']
     for ds_name in ALL_DATASETS:
         fit_fcnn(ds_name)
         fit_deepar(ds_name)

@@ -100,7 +100,7 @@ def _run_selector(p, model_class, hyperparameters, n_repeats, X_train, y_train, 
     s_star_test = oracle.get_labels(y_test, fcomp_test_preds, fint_test_preds)
 
     n_datapoints_with_label = np.unique(s_star_val, return_counts=True)[1]
-    if n_datapoints_with_label[0] < 2 or n_datapoints_with_label[1] < 2:
+    if len(n_datapoints_with_label) <= 1 or n_datapoints_with_label[0] < 2 or n_datapoints_with_label[1] < 2:
         return 0, 0, 0, 0
 
     train_preds = np.vstack([fcomp_train_preds, fint_train_preds])
@@ -145,7 +145,7 @@ def compute_selector(ds_name, fint_name, fcomp_name, sel_name, ps):
         hyperparameters['random_state'] = string_to_randomstate(f'{ds_name}_{sel_name}', return_seed=True)
     
     for p in ps:
-        result = Parallel(n_jobs=-1, backend='loky')(delayed(_run_selector)(
+        result = Parallel(n_jobs=6, backend='loky')(delayed(_run_selector)(
             p, 
             model_class, 
             hyperparameters, 
@@ -175,8 +175,8 @@ def compute_selector(ds_name, fint_name, fcomp_name, sel_name, ps):
 
         results[sel_name][p] = f1
 
-    with open(f'results/selection/{ds_name}.pickle', 'wb') as f:
-        pickle.dump(results, f)
+        with open(f'results/selection/{ds_name}.pickle', 'wb') as f:
+            pickle.dump(results, f)
 
 def compute_selection_accuracy(ds_name, ps):
     with open(f'results/selection/{ds_name}.pickle', 'rb') as f:

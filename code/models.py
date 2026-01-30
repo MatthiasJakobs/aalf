@@ -5,14 +5,155 @@ import torch.nn as nn
 from tsx.utils import get_device, EarlyStopping
 from preprocessing import _load_data, generate_covariates
 from multiprocessing import cpu_count
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestClassifier
+from statsmodels.tsa.exponential_smoothing.ets import ETSModel
+from statsmodels.tsa.ar_model import AutoReg
 
-from sklearn.base import BaseEstimator, ClassifierMixin, clone
-from sklearn.utils import resample
-from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
-from collections import Counter
-from scipy.stats import mode
+class SES:
+
+    def reset_params(self):
+        self.alpha = self.params[0]
+        self.l0 = self.params[-1]
+
+    def fit(self, y, m=1, verbose=False, maxiter=1000):
+        model = ETSModel(y, error='add', trend=None, damped_trend=False, seasonal=None)
+        fit = model.fit(disp=verbose, maxiter=maxiter)
+        self.params = fit.params
+        self.aic = fit.aic
+        self.bic = fit.bic
+        self.reset_params()
+        if verbose:
+            print(f'alpha={self.alpha}, l_0={self.l0}')
+
+        return self
+
+    def predict(self, y, L=10):
+        self.reset_params()
+        preds = []
+        for y_t in y:
+            lt = self.alpha * y_t + (1-self.alpha) * self.l0
+            pred = lt
+            preds.append(pred)
+            self.l0 = lt
+        return np.array(preds)[L:]
+
+class HoltsLinearTrend:
+
+    def reset_params(self):
+        self.alpha = self.params[0]
+        self.beta = self.params[1]
+        self.l0 = self.params[2]
+        self.b0 = self.params[3]
+
+    def fit(self, y, m=1, verbose=False, maxiter=1000):
+        model = ETSModel(y, error='add', trend='add', damped_trend=False, seasonal=None)
+        fit = model.fit(disp=verbose, maxiter=maxiter)
+        self.params = fit.params
+        self.aic = fit.aic
+        self.bic = fit.bic
+        self.reset_params()
+        if verbose:
+            print(f'alpha={self.alpha}, beta*={self.beta}, l_0={self.l0}, b_0={self.b0}')
+
+        return self
+
+    def predict(self, y, L=10):
+        self.reset_params()
+        preds = []
+        for y_t in y:
+            lt = self.alpha * y_t + (1-self.alpha) * (self.l0 + self.b0)
+            bt = self.beta * (lt - self.l0) + (1-self.beta)*self.b0
+            pred = lt + bt
+            preds.append(pred)
+            self.l0 = lt
+            self.b0 = bt
+        return np.array(preds)[L:]
+
+class HoltWinter:
+
+    def reset_params(self):
+        self.alpha = self.params[0]
+        self.beta = self.params[1]
+        self.gamma = self.params[2] 
+        self.l0 = self.params[3]
+        self.b0 = self.params[4]
+        self.s0 = np.array(self.params[5:])
+
+    def fit(self, y, m, verbose=False, maxiter=1000):
+        model = ETSModel(y, error='add', trend='add', damped_trend=False, seasonal='add', seasonal_periods=m)
+        fit = model.fit(disp=verbose, maxiter=maxiter)
+        self.params = fit.params
+        self.aic = fit.aic
+        self.m = m
+        self.reset_params()
+        if verbose:
+            print(f'alpha={self.alpha}, beta*={self.beta}, gamma={self.gamma}, l_0={self.l0}, b_0={self.b0}, s_0={self.s0}')
+
+        return self
+
+    def predict(self, y, L=10):
+        self.reset_params()
+        preds = []
+        for y_t in y:
+            lt = self.alpha * (y_t - self.s0[0]) + (1-self.alpha) * (self.l0 + self.b0)
+            bt = self.beta * (lt - self.l0) + (1-self.beta)*self.b0
+            st = self.gamma * (y_t - self.l0 - self.b0) + (1-self.gamma) * self.s0[0]
+            pred = lt + bt + self.s0[1]
+            preds.append(pred)
+            self.l0 = lt
+            self.b0 = bt
+            self.s0 = np.roll(self.s0, -1)
+            self.s0[-1] = st
+
+        return np.array(preds)[L:]
+
+class AutoETS:
+
+    def fit(self, y, m=1, maxiter=5000):
+        models = [SES().fit(y, m=m, maxiter=maxiter), HoltsLinearTrend().fit(y, m=m, maxiter=maxiter), HoltWinter().fit(y, m=m, maxiter=maxiter)]
+        aics = [model.aic for model in models]
+        self.model = models[np.argmin(aics)]
+
+    def predict(self, y, L=10):
+        return self.model.predict(y, L=L)
+
+class AutoAR():
+
+    def fit(self, y, L=10):
+        self.intercept_ = 0
+        self.trend_coef_ = 0
+        self.arparams_ = None
+        best_bic = np.inf
+        self.L = L
+
+        for trend in ['n', 'c', 't', 'ct']:
+            model = AutoReg(y, lags=L, trend=trend)
+            res = model.fit()
+            if res.bic < best_bic:
+                best_bic = res.bic
+                if trend == 'n':
+                    self.intercept_ = 0.0
+                    self.trend_coef_ = 0.0
+                    self.arparams_ = res.params
+                elif trend == 'c':
+                    self.intercept_ = res.params[0]
+                    self.trend_coef_ = 0.0
+                    self.arparams_ = res.params[1:]
+                elif trend == 't':
+                    self.intercept_ = 0.0
+                    self.trend_coef_ = res.params[0]
+                    self.arparams_ = res.params[1:]
+                elif trend == 'ct':
+                    self.intercept_ = res.params[0]
+                    self.trend_coef_ = res.params[1]
+                    self.arparams_ = res.params[2:]
+
+        return self
+
+    def predict(self, X):
+        preds = self.intercept_ + X @ self.arparams_[::-1]
+        time_index = np.arange(len(X))
+        preds = preds + self.trend_coef_ * time_index
+        return preds
 
 class UpsampleEnsembleClassifier:
 

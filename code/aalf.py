@@ -9,6 +9,7 @@ from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier
 from models import UpsampleEnsembleClassifier
 from os import makedirs
+from os.path import exists
 from utils import rmse, smape
 
 class AALF:
@@ -24,8 +25,12 @@ class AALF:
 
         #sel = RandomForestClassifier(n_estimators=128, random_state=20241127)
         sel = UpsampleEnsembleClassifier(model_class=RandomForestClassifier, n_estimators=128, n_member=9, random_state=20241127)
-        sel.fit(X_val, s_star_val)
-        selection = sel.predict(X_test).astype(np.int8)
+        u = np.unique(s_star_val)
+        if len(u) <= 1:
+            selection = (np.ones((X_test.shape[0])) * u[0]).astype(np.int8)
+        else:
+            sel.fit(X_val, s_star_val)
+            selection = sel.predict(X_test).astype(np.int8)
 
         prediction = np.choose(selection, test_preds)
         return prediction, selection
@@ -74,6 +79,11 @@ def run(ds_name, debug=False):
 
     for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
         # Run selections
+        makedirs('results/aalf', exist_ok=True)
+        save_path = f'results/aalf/{ds_name}_{p}.csv'
+        if exists(save_path):
+            print(save_path, 'exists already')
+            continue
         if not debug:
             from joblib import Parallel, delayed
             result = Parallel(n_jobs=-1, backend='loky')(delayed(_run_single)(
@@ -109,8 +119,7 @@ def run(ds_name, debug=False):
                 ) for ds_index in tqdm.trange(n_datapoints, desc=f'[{ds_name} - {p} - DBG]')]
 
         result = pd.DataFrame(result)
-        makedirs('results/aalf', exist_ok=True)
-        result.to_csv(f'results/aalf/{ds_name}_{p}.csv')
+        result.to_csv(save_path)
 
 def main():
     for ds_name in ALL_DATASETS:
