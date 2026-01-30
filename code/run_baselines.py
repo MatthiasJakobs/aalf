@@ -9,7 +9,7 @@ from tsx.model_selection import ADE, DETS, KNNRoC, OMS_ROC
 from tsx.utils import string_to_randomstate
 from utils import smape, rmse
 from os import makedirs
-from config import ALL_DATASETS
+from config import ALL_DATASETS, DS_MAP, MODEL_MAP
 from critdd import Diagrams
 
 def _compute_individual(X_train, y_train, X_val, y_val, X_test, y_test, fcomp_preds_val, fcomp_preds_test, fint_preds_val, fint_preds_test, random_state=None):
@@ -144,18 +144,18 @@ def compute_baselines(ds_name, debug=False):
 def calc_cdd():
 
     METHOD_NAMES = {
-        'aalf_0.5': r'$\textbf{AALF}_{p=0.5}$',
-        'aalf_0.6': r'$\textbf{AALF}_{p=0.6}$',
-        'aalf_0.7': r'$\textbf{AALF}_{p=0.7}$',
-        'aalf_0.8': r'$\textbf{AALF}_{p=0.8}$',
-        'aalf_0.9': r'$\textbf{AALF}_{p=0.9}$',
-        'aalf_0.95': r'$\textbf{AALF}_{p=0.95}$',
-        'dets': r'$\textbf{DETS}$',
-        'ade': r'$\textbf{ADE}$',
-        'knnroc': r'$\textbf{KNN-RoC}$',
-        'omsroc': r'$\textbf{OMS-RoC}$',
-        'lv': r'$\textbf{LastValue}$',
-        'mv': r'$\textbf{MeanValue}$',
+        'aalf_0.5': r'$\texttt{AALF}_{p=0.5}$',
+        'aalf_0.6': r'$\texttt{AALF}_{p=0.6}$',
+        'aalf_0.7': r'$\texttt{AALF}_{p=0.7}$',
+        'aalf_0.8': r'$\texttt{AALF}_{p=0.8}$',
+        'aalf_0.9': r'$\texttt{AALF}_{p=0.9}$',
+        'aalf_0.95': r'$\texttt{AALF}_{p=0.95}$',
+        'dets': r'$\texttt{DETS}$',
+        'ade': r'$\texttt{ADE}$',
+        'knnroc': r'$\texttt{KNN-RoC}$',
+        'omsroc': r'$\texttt{OMS-RoC}$',
+        'lv': r'$\texttt{LastValue}$',
+        'mv': r'$\texttt{MeanValue}$',
     }
 
     result = None
@@ -215,16 +215,94 @@ def calc_cdd():
             'height': r'0.4*\axisdefaultheight',
             'xticklabel style': r'font=\fontsize{6}{6}\selectfont',
             'yticklabel style': r'font=\fontsize{6}{6}\selectfont, align=right',
-            'legend style': r'at={(0.96, -0.25)}, font=\fontsize{6}{6}\selectfont,/tikz/every column/.append style={column sep=10ex}, legend columns=6',
+            'legend style': r'at={(0.88, -0.25)}, font=\fontsize{6}{6}\selectfont,/tikz/every column/.append style={column sep=10ex}, legend columns=6',
+        },
+    )
+
+def calc_cdd2():
+
+    METHOD_NAMES = {
+        'aalf_0.5': r'$\texttt{AALF}_{p=0.5}$',
+        'aalf_0.6': r'$\texttt{AALF}_{p=0.6}$',
+        'aalf_0.7': r'$\texttt{AALF}_{p=0.7}$',
+        'aalf_0.8': r'$\texttt{AALF}_{p=0.8}$',
+        'aalf_0.9': r'$\texttt{AALF}_{p=0.9}$',
+        'aalf_0.95': r'$\texttt{AALF}_{p=0.95}$',
+        'dets': r'$\texttt{DETS}$',
+        'ade': r'$\texttt{ADE}$',
+        'knnroc': r'$\texttt{KNN-RoC}$',
+        'omsroc': r'$\texttt{OMS-RoC}$',
+        'lv': r'$\texttt{LastValue}$',
+        'mv': r'$\texttt{MeanValue}$',
+    }
+
+    dfs = []
+    # Load data
+    for ds_name in ALL_DATASETS:
+        # Baselines
+        _result_baselines = pd.read_csv(f'results/baseline_selectors/{ds_name}.csv', index_col=0)
+        _result_baselines = _result_baselines[['ade_rmse', 'knnroc_rmse', 'omsroc_rmse', 'dets_rmse', 'lv_rmse', 'mv_rmse']]
+        _result_baselines = _result_baselines.rename(columns={'ade_rmse': 'ade', 'knnroc_rmse': 'knnroc', 'omsroc_rmse': 'omsroc', 'dets_rmse': 'dets', 'mv_rmse': 'mv', 'lv_rmse': 'lv'})
+        # AALF
+        _result_aalf = None
+        for p in [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
+            ra = pd.read_csv(f'results/aalf/{ds_name}_{p}.csv', index_col=0)
+            ra = ra.rename(columns={'aalf_rmse': f'aalf_{p}'})
+            ra = ra.drop(columns=['aalf_p', 'aalf_smape', 'true_p'], errors='ignore')
+            if _result_aalf is None:
+                _result_aalf = ra
+            else:
+                _result_aalf = pd.concat([_result_aalf, ra], axis=1)
+
+        _result = pd.concat([_result_aalf, _result_baselines], axis=1)
+
+        dfs.append(_result.to_numpy())
+
+    # Create CDD
+    #result = result.sample(n=500)
+
+    two_dimensional_diagram = Diagrams(
+        dfs,
+        diagram_names=[DS_MAP[ds_name].replace(' ', r'\\') for ds_name in ALL_DATASETS],
+        treatment_names=list(METHOD_NAMES.values()),
+        maximize_outcome=False,
+    )
+    makedirs('plots', exist_ok=True)
+    two_dimensional_diagram.to_file(
+        'plots/2d_cdd_aalf_baselines.tex',
+        preamble = "\n".join([ # colors are defined before \begin{document}
+            #fr"\definecolor{{color1}}{{HTML}}{{{COLORS.blue}}}",
+        ]),
+        axis_options = { # style the plot
+            "cycle list": ",".join([ # define the markers for treatments
+                r"{color={rgb,255:red,152;green,78;blue,163},thick,mark=x,mark options={scale=2}}",
+                r"{color={rgb,255:red,152;green,78;blue,163},thick,mark=square,mark options={scale=1.5}}",
+                r"{color={rgb,255:red,152;green,78;blue,163},thick,mark=triangle,mark options={scale=2.25}}",
+                r"{color={rgb,255:red,152;green,78;blue,163},thick,mark=diamond,mark options={scale=1.75}}",
+                r"{color={rgb,255:red,152;green,78;blue,163},thick,mark=star,mark options={scale=2}}",
+                r"{color={rgb,255:red,152;green,78;blue,163},thick,mark=o,mark options={scale=2}}",
+                r"{color={rgb,255:red,53;green,205;blue,180},thick, mark=o,mark options={scale=2}}",
+                r"{color={rgb,255:red,166;green,86;blue,40},thick, mark=o,mark options={scale=2}}",
+                r"{color={rgb,255:red,247;green,129;blue,191},thick, mark=o,mark options={scale=2}}",
+                r"{color={rgb,255:red,255;green,188;blue,41},thick, mark=o,mark options={scale=2}}",
+                r"{blue,mark=o,thick, mark options={scale=2}}",
+                r"{red,mark=o,thick, mark options={scale=2}}",
+            ]),
+            'width': '400', # should be 372 but axis labels are not considered
+            'height': r'1*\axisdefaultheight',
+            'xticklabel style': r'font=\fontsize{6}{6}\selectfont',
+            'yticklabel style': r'font=\fontsize{6}{6}\selectfont, align=right',
+            'legend style': r'at={(0.88, -0.05)}, font=\fontsize{6}{6}\selectfont,/tikz/every column/.append style={column sep=10ex}, legend columns=6',
         },
     )
 
 
 def main():
-    # for ds_name in ALL_DATASETS:
-    #     compute_baselines(ds_name, debug=False)
+    for ds_name in ALL_DATASETS:
+        compute_baselines(ds_name, debug=False)
 
     calc_cdd()
+    calc_cdd2()
 
 if __name__ == '__main__':
     main()

@@ -23,6 +23,18 @@ class CPU_Unpickler(pickle.Unpickler):
             return lambda b: torch.load(io.BytesIO(b), map_location='cpu', weights_only=False)
         else: return super().find_class(module, name)
 
+@torch.no_grad()
+def predict_deepar(m, x, L=10):
+    m.eval()
+    x = torch.from_numpy(x).float().to(m.device)
+    h0, c0 = m.initialize_hidden(1)
+    T = len(x)
+    preds = []
+    for t in range(T):
+        mu, _, h0, c0 = m(x[t].unsqueeze(0).unsqueeze(0), h0, c0)
+        preds.append(mu)
+    return torch.stack(preds).cpu().numpy().squeeze()[L:]
+
 def save_results(ds_name, model_name, train_preds, val_preds, test_preds, rmse_values, smape_values):
     # Check if output file exists, create otherwise
     if exists(f'preds/{ds_name}.pickle'):
@@ -53,16 +65,9 @@ def evaluate_autoets(ds_name):
         ets = AutoETS()
         ets.fit(X_train, m=S)
 
-        X = np.concatenate([X_train, X_val, X_test])
-        all_preds = ets.predict(X, L=L)
-
-        n_preds_train = local_y_train.shape[0]
-        n_preds_val = local_y_val.shape[0]
-        n_preds_test = local_y_test.shape[0]
-
-        train_preds_ets = all_preds[:n_preds_train]
-        val_preds_ets = all_preds[n_preds_train+L:n_preds_train+L+n_preds_val]
-        test_preds_ets = all_preds[-n_preds_test:]
+        train_preds_ets = ets.predict(X_train, L=L)
+        val_preds_ets = ets.predict(X_val, L=L)
+        test_preds_ets = ets.predict(X_test, L=L)
 
         err_rmse = rmse(test_preds_ets.squeeze(), local_y_test.squeeze())
         err_smape = smape(test_preds_ets.squeeze(), local_y_test.squeeze())
@@ -77,7 +82,7 @@ def evaluate_autoets(ds_name):
     (local_X_train, local_y_train), (local_X_val, local_y_val), (local_X_test, local_y_test) = load_local_data(ds_name, L=L, H=1, return_split=['train', 'val', 'test'], verbose=True)
 
     n_ts = len(local_X_train)
-    n_jobs = min(n_ts, 6)  # number of threads
+    n_jobs = min(n_ts, 4)  # number of threads
 
     results_list = Parallel(n_jobs=n_jobs)(delayed(_process_single)(
             X_train[ds_index], X_val[ds_index], X_test[ds_index], local_X_train[ds_index], local_y_train[ds_index], local_X_val[ds_index], local_y_val[ds_index], local_X_test[ds_index], local_y_test[ds_index]
@@ -202,12 +207,55 @@ def evaluate_naive(ds_name):
     save_results(ds_name, 'lastvalue', all_train_predictions_lv, all_val_predictions_lv, all_test_predictions_lv, all_rmse_lv, all_smape_lv)
     save_results(ds_name, 'meanvalue', all_train_predictions_mv, all_val_predictions_mv, all_test_predictions_mv, all_rmse_mv, all_smape_mv)
 
-def evaluate_global_models(ds_name):
+def evaluate_deepar(ds_name):
+    dsh = DATASET_HYPERPARAMETERS[ds_name]
+    L = dsh['L']
+    freq = dsh['freq']
+
+    X_train, _, _ = _load_data(ds_name, return_start_dates=False)
+    n_ts = len(X_train)
+    del X_train
+
+    with open(f'models/{ds_name}/deepar.pickle', 'rb') as f:
+        deepar = CPU_Unpickler(f).load().to('cpu')
+        deepar.device = 'cpu'
+        deepar.lstm.flatten_parameters()
+
+    all_train_predictions = []
+    all_val_predictions = []
+    all_test_predictions = []
+    all_rmse_losses = []
+    all_smape_losses = []
+
+    for X_train, X_val, X_test in tqdm.tqdm(load_global_data(ds_name, L=L, H=1, freq=freq, return_windowed=False), total=n_ts):
+
+        y_train = X_train[L:, 0]
+        y_val = X_val[L:, 0]
+        y_test = X_test[L:, 0]
+
+        train_preds = predict_deepar(deepar, X_train, L=L).reshape(y_train.shape)
+        val_preds = predict_deepar(deepar, X_val, L=L).reshape(y_val.shape)
+        test_preds = predict_deepar(deepar, X_test, L=L).reshape(y_test.shape)
+
+        all_train_predictions.append(train_preds.squeeze())
+        all_val_predictions.append(val_preds.squeeze())
+        all_test_predictions.append(test_preds.squeeze())
+
+        rmse_loss = rmse(test_preds.squeeze(), y_test.squeeze())
+        smape_loss = smape(test_preds.squeeze(), y_test.squeeze())
+        all_rmse_losses.append(rmse_loss)
+        all_smape_losses.append(smape_loss)
+
+    save_results(ds_name, 'deepar', all_train_predictions, all_val_predictions, all_test_predictions, all_rmse_losses, all_smape_losses)
+
+def evaluate_global_models(ds_name, model_names=None):
     dsh = DATASET_HYPERPARAMETERS[ds_name]
     L = dsh['L']
     freq = dsh['freq']
     loss_fn_names = ['rmse', 'smape']
-    model_names = ['fcnn', 'deepar', 'cnn']
+    if model_names is None:
+        model_names = ['fcnn', 'cnn']
+    print(model_names)
 
     all_loss_values = {f'{m_name}_{loss_name}': [] for m_name, loss_name in product(model_names, loss_fn_names)}
     all_train_predictions = {m_name: [] for m_name in model_names + ['y']}
@@ -218,24 +266,29 @@ def evaluate_global_models(ds_name):
     n_ts = len(X_train)
     del X_train
 
+    models = {}
+
     # Load global models
     with open(f'models/{ds_name}/deepar.pickle', 'rb') as f:
         deepar = CPU_Unpickler(f).load().to('cpu')
         deepar.device = 'cpu'
         deepar.lstm.flatten_parameters()
+        models['deepar'] = deepar
 
     with open(f'models/{ds_name}/fcnn.pickle', 'rb') as f:
         fcnn = CPU_Unpickler(f).load()
         fcnn.device = 'cpu'
         fcnn.model = fcnn.model.to('cpu')
+        models['fcnn'] = fcnn
 
     with open(f'models/{ds_name}/cnn.pickle', 'rb') as f:
         cnn = CPU_Unpickler(f).load()
         cnn.device = 'cpu'
         cnn.model = cnn.model.to('cpu')
+        models['cnn'] = cnn
 
     for _X_train, _y_train, _X_val, _y_val, _X_test, _y_test in tqdm.tqdm(load_global_data(ds_name, L=L, H=1, freq=freq), total=n_ts, desc='process global models'):
-        for m_name, m in zip(['fcnn', 'deepar', 'cnn'], [fcnn, deepar, cnn]):
+        for m_name in model_names:
             if m_name == 'fcnn':
                 X_train = _X_train.reshape(_X_train.shape[0], -1)
                 y_train = _y_train.reshape(_y_train.shape[0], -1)
@@ -255,6 +308,7 @@ def evaluate_global_models(ds_name):
                 y_val = _y_val
                 y_test = _y_test
 
+            m = models[m_name]
             train_preds = m.predict(X_train).reshape(y_train.shape)
             val_preds = m.predict(X_val).reshape(y_val.shape)
             test_preds = m.predict(X_test).reshape(y_test.shape)
@@ -272,7 +326,7 @@ def evaluate_global_models(ds_name):
 def generate_cdd_plot(loss_fn='rmse'):
     datasets_to_evaluate = ALL_DATASETS
     dfs = []
-    models = ['linear', 'fcnn', 'deepar', 'cnn']
+    models = ['autoarima', 'autoets', 'fcnn', 'deepar', 'cnn']
     full_model_names = [f'{model_name}_{loss_fn}' for model_name in models]
 
     for ds_name in datasets_to_evaluate:
@@ -297,6 +351,7 @@ def generate_cdd_plot(loss_fn='rmse'):
         axis_options = { # style the plot
             "cycle list": ",".join([ # define the markers for treatments
                 r"{color1,mark=x,very thick,mark options={scale=2}}",
+                r"{color5,mark=x,very thick,mark options={scale=2}}",
                 r"{color3,mark=x,very thick,mark options={scale=2}}",
                 r"{color2,mark=x,very thick,mark options={scale=2}}",
                 r"{color4,mark=x,very thick,mark options={scale=2}}",
@@ -313,9 +368,13 @@ def generate_latex_table():
     datasets_to_evaluate = ALL_DATASETS
     dfs = []
     loss_function_names = ['RMSE', 'SMAPE']
+    models_to_include = ['autoarima', 'autoets', 'fcnn', 'deepar', 'cnn', 'lastvalue', 'meanvalue']
 
     for ds_name in datasets_to_evaluate:
         df = pd.read_csv(f'results/basemodel_losses/{ds_name}.csv', index_col=0)
+        selected_columns = [col for col in df.columns if any(s in col for s in models_to_include)]
+        df = df[selected_columns]
+
         # Take mean per loss
         df = df.mean(axis=0)
         # Split name to multiindex
@@ -331,32 +390,26 @@ def generate_latex_table():
     df = df.apply(format_significant, axis=1)
     df = df.apply(highlight_min_multicolumn, metric_names=loss_function_names, axis=1)
 
-    #df = df.transpose()
+    df = df.transpose()
 
     latex_output = df.to_latex(
         multirow=False,
         escape=False, 
         multicolumn_format='l',
-        #column_format=r'llp{2cm}p{1.0cm}p{1.0cm}p{1.3cm}p{1.0cm}p{1.0cm}',
-        column_format=r'p{2.5cm}p{0.75cm}p{0.85cm}p{0.75cm}p{0.85cm}p{0.75cm}p{0.85cm}p{0.75cm}p{0.85cm}',
+        column_format=r'p{1.5cm}p{1cm}p{2cm}p{1cm}p{1cm}p{1cm}p{1cm}p{1cm}',
     )
     with open(f'plots/single_results.tex', 'w') as f:
         f.write(latex_output)
 
 def main():
-    # for ds_name in ALL_DATASETS:
-    #     evaluate_linear(ds_name)
-    #     evaluate_global_models(ds_name)
-    #     evaluate_autoarima(ds_name)
-    #     evaluate_autoets(ds_name)
-    # for ds_name in ALL_DATASETS:
-        # evaluate_naive(ds_name)
-    #generate_cdd_plot(loss_fn='rmse')
-
     for ds_name in ALL_DATASETS:
+        evaluate_naive(ds_name)
         evaluate_autoar(ds_name)
         evaluate_autoets(ds_name)
-    #generate_latex_table()
+        evaluate_deepar(ds_name)
+        evaluate_global_models(ds_name)
+    generate_latex_table()
+    generate_cdd_plot(loss_fn='rmse')
 
 if __name__ == '__main__':
     main()

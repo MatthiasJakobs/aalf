@@ -9,19 +9,25 @@ from statsmodels.tsa.exponential_smoothing.ets import ETSModel
 from statsmodels.tsa.ar_model import AutoReg
 
 class SES:
+
+    def reset_params(self):
+        self.alpha = self.params[0]
+        self.l0 = self.params[-1]
+
     def fit(self, y, m=1, verbose=False, maxiter=1000):
         model = ETSModel(y, error='add', trend=None, damped_trend=False, seasonal=None)
         fit = model.fit(disp=verbose, maxiter=maxiter)
-        params = fit.params
+        self.params = fit.params
         self.aic = fit.aic
-        self.alpha = params[0]
-        self.l0 = params[-1]
+        self.bic = fit.bic
+        self.reset_params()
         if verbose:
             print(f'alpha={self.alpha}, l_0={self.l0}')
 
         return self
 
     def predict(self, y, L=10):
+        self.reset_params()
         preds = []
         for y_t in y:
             lt = self.alpha * y_t + (1-self.alpha) * self.l0
@@ -32,18 +38,26 @@ class SES:
 
 class HoltsLinearTrend:
 
+    def reset_params(self):
+        self.alpha = self.params[0]
+        self.beta = self.params[1]
+        self.l0 = self.params[2]
+        self.b0 = self.params[3]
+
     def fit(self, y, m=1, verbose=False, maxiter=1000):
         model = ETSModel(y, error='add', trend='add', damped_trend=False, seasonal=None)
         fit = model.fit(disp=verbose, maxiter=maxiter)
-        params = fit.params
+        self.params = fit.params
         self.aic = fit.aic
-        self.alpha, self.beta, self.l0, self.b0 = params
+        self.bic = fit.bic
+        self.reset_params()
         if verbose:
             print(f'alpha={self.alpha}, beta*={self.beta}, l_0={self.l0}, b_0={self.b0}')
 
         return self
 
     def predict(self, y, L=10):
+        self.reset_params()
         preds = []
         for y_t in y:
             lt = self.alpha * y_t + (1-self.alpha) * (self.l0 + self.b0)
@@ -55,24 +69,29 @@ class HoltsLinearTrend:
         return np.array(preds)[L:]
 
 class HoltWinter:
+
+    def reset_params(self):
+        self.alpha = self.params[0]
+        self.beta = self.params[1]
+        self.gamma = self.params[2] 
+        self.l0 = self.params[3]
+        self.b0 = self.params[4]
+        self.s0 = np.array(self.params[5:])
+
     def fit(self, y, m, verbose=False, maxiter=1000):
         model = ETSModel(y, error='add', trend='add', damped_trend=False, seasonal='add', seasonal_periods=m)
         fit = model.fit(disp=verbose, maxiter=maxiter)
-        params = fit.params
+        self.params = fit.params
         self.aic = fit.aic
         self.m = m
-        self.alpha = params[0]
-        self.beta = params[1]
-        self.gamma = params[2] 
-        self.l0 = params[3]
-        self.b0 = params[4]
-        self.s0 = np.array(params[5:])
+        self.reset_params()
         if verbose:
             print(f'alpha={self.alpha}, beta*={self.beta}, gamma={self.gamma}, l_0={self.l0}, b_0={self.b0}, s_0={self.s0}')
 
         return self
 
     def predict(self, y, L=10):
+        self.reset_params()
         preds = []
         for y_t in y:
             lt = self.alpha * (y_t - self.s0[0]) + (1-self.alpha) * (self.l0 + self.b0)

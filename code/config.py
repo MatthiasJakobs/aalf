@@ -1,10 +1,10 @@
 DATASET_HYPERPARAMETERS = {
-    'australian_electricity_demand': {'freq': '30min', 'L': 48, 'S':48, 'fint': 'linear', 'fcomp': 'fcnn' },
-    'pedestrian_counts': {'freq': '1h', 'L': 24 , 'S': 24, 'fint': 'linear', 'fcomp': 'deepar' },
-    'nn5_daily_nomissing': {'freq': '1d', 'L': 14, 'S': 7, 'fint': 'linear', 'fcomp': 'cnn' },
-    'weather': {'freq': '1d', 'L': 14, 'S': 7, 'fint': 'linear', 'fcomp': 'deepar' },
-    'kdd_cup_nomissing': {'freq': '1h', 'L': 24, 'S': 24, 'fint': 'linear', 'fcomp': 'fcnn' },
-    'solar_10_minutes':{'freq': '1h', 'L': 24, 'S': 24, 'fint': 'linear', 'fcomp': 'cnn' }
+    'australian_electricity_demand': {'freq': '30min', 'L': 48, 'S':48, 'fint': 'autoarima', 'fcomp': 'fcnn' },
+    'nn5_daily_nomissing': {'freq': '1d', 'L': 14, 'S': 7, 'fint': 'autoarima', 'fcomp': 'fcnn' },
+    'pedestrian_counts': {'freq': '1h', 'L': 24 , 'S': 24, 'fint': 'autoarima', 'fcomp': 'fcnn' },
+    'weather': {'freq': '1d', 'L': 14, 'S': 7, 'fint': 'autoets', 'fcomp': 'deepar' },
+    'kdd_cup_nomissing': {'freq': '1h', 'L': 24, 'S': 24, 'fint': 'autoets', 'fcomp': 'deepar' },
+    'solar_10_minutes':{'freq': '1h', 'L': 24, 'S': 24, 'fint': 'autoarima', 'fcomp': 'cnn' }
 }
 
 DEEPAR_HYPERPARAMETERS = {
@@ -21,7 +21,7 @@ FCN_HYPERPARAMETERS = {
     'nn5_daily_nomissing': {'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
     'weather': {'hidden_size': 64, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': 10_000},
     'pedestrian_counts': {'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
-    'kdd_cup_nomissing': {'max_epochs': 20, 'learning_rate': 6e-4, 'batch_size': 64, 'limit_train_batches': None},
+    'kdd_cup_nomissing': {'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 64, 'limit_train_batches': None, 'hidden_size': 64},
     'solar_10_minutes': {'max_epochs': 10, 'learning_rate': 1e-3, 'batch_size': 64, 'limit_train_batches': None},
 }
 
@@ -30,7 +30,7 @@ CNN_HYPERPARAMETERS = {
     'australian_electricity_demand': {'n_hidden_channels': 32, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 64, 'limit_train_batches': 1024},
     'nn5_daily_nomissing': {'n_hidden_channels': 32, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 64, 'limit_train_batches': None},
     'pedestrian_counts': {'n_hidden_channels': 32, 'max_epochs': 100, 'learning_rate': 1e-3, 'batch_size': 256, 'limit_train_batches': None},
-    'kdd_cup_nomissing': {'n_hidden_channels': 32, 'max_epochs': 100, 'learning_rate': 6e-4, 'batch_size': 64, 'limit_train_batches': None},
+    'kdd_cup_nomissing': {'n_hidden_channels': 32, 'max_epochs': 100, 'learning_rate': 6e-4, 'batch_size': 256, 'limit_train_batches': None},
     'solar_10_minutes': {'n_hidden_channels': 32, 'max_epochs': 10, 'learning_rate': 1e-3, 'batch_size': 64, 'limit_train_batches': None},
 }
 
@@ -56,8 +56,8 @@ MODEL_MAP = {
     'cnn': 'CNN',
     'autoarima': 'AutoAR',
     'autoets': 'AutoETS',
-    'lastvalue': 'LV',
-    'meanvalue': 'MV',
+    'lastvalue': 'LastValue',
+    'meanvalue': 'MeanValue',
 }
 
 LOSS_MAP = {
